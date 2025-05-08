@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text.Json.Nodes;
-using BitwardenDecryptor.Models;
+﻿using System.Text.Json.Nodes;
 
 namespace BitwardenDecryptor.Core;
 
@@ -13,31 +9,36 @@ public class VaultFileParser
         VaultFileParseResult? result;
 
         result = TryParseEncryptedJsonFormat(rootNode, options);
-        if (result != null)
+
+        if (result is not null)
         {
             return result;
         }
 
         result = TryParse2024Format(rootNode, options);
-        if (result != null)
+
+        if (result is not null)
         {
             return result;
         }
 
         result = TryParseNewFormat(rootNode, options);
-        if (result != null)
+
+        if (result is not null)
         {
             return result;
         }
 
         result = TryParseOldFormat(rootNode, options);
-        if (result != null)
+
+        if (result is not null)
         {
             return result;
         }
 
         Console.Error.WriteLine("ERROR: Could not determine data file format or find account data.");
-        return new VaultFileParseResult(false);
+
+        return new(false);
     }
 
     private static VaultFileParseResult? TryParseEncryptedJsonFormat(JsonNode rootNode, CommandLineOptions options)
@@ -53,7 +54,7 @@ public class VaultFileParser
         int kdfType = rootNode["kdf"]?.GetValue<int>() ?? 0;
         string protectedSymmKeyOrValidation = rootNode["encKeyValidation_DO_NOT_EDIT"]!.GetValue<string>();
 
-        return new VaultFileParseResult(true, emailOrSalt, kdfIterations, null, null, kdfType, protectedSymmKeyOrValidation, null);
+        return new(true, emailOrSalt, kdfIterations, null, null, kdfType, protectedSymmKeyOrValidation, null);
     }
 
     private static List<(string uuid, string email)> Extract2024FormatAccounts(JsonObject accountsNode)
@@ -89,7 +90,7 @@ public class VaultFileParser
 
         if (!SelectAccount(validAccounts, options.InputFile, out var selectedAccountUuid, out var selectedAccountEmail))
         {
-            return new VaultFileParseResult(false);
+            return new(false);
         }
 
         options.AccountUuid = selectedAccountUuid;
@@ -98,7 +99,7 @@ public class VaultFileParser
         var (emailOrSalt, kdfIterations, kdfMemory, kdfParallelism, kdfType, protectedSymmKey, encPrivateKey) =
             GetKdfAndKeyParametersFor2024Format(rootNode, options.AccountUuid, options.AccountEmail);
 
-        return new VaultFileParseResult(true, emailOrSalt, kdfIterations, kdfMemory, kdfParallelism, kdfType, protectedSymmKey, encPrivateKey);
+        return new(true, emailOrSalt, kdfIterations, kdfMemory, kdfParallelism, kdfType, protectedSymmKey, encPrivateKey);
     }
 
     private static List<(string uuid, string email)> ExtractNewFormatAccounts(JsonNode rootNode)
@@ -137,7 +138,7 @@ public class VaultFileParser
 
         if (!SelectAccount(potentialNewFormatAccounts, options.InputFile, out var selectedAccountUuid, out var selectedAccountEmail))
         {
-            return new VaultFileParseResult(false);
+            return new(false);
         }
 
         options.AccountUuid = selectedAccountUuid;
@@ -146,7 +147,7 @@ public class VaultFileParser
         var (emailOrSalt, kdfIterations, kdfMemory, kdfParallelism, kdfType, protectedSymmKey, encPrivateKey) =
             GetKdfAndKeyParametersForNewFormat(rootNode, options.AccountUuid, options.AccountEmail);
 
-        return new VaultFileParseResult(true, emailOrSalt, kdfIterations, kdfMemory, kdfParallelism, kdfType, protectedSymmKey, encPrivateKey);
+        return new(true, emailOrSalt, kdfIterations, kdfMemory, kdfParallelism, kdfType, protectedSymmKey, encPrivateKey);
     }
 
     private static (string emailOrSalt, int kdfIterations, int? kdfMemory, int? kdfParallelism, int kdfType, string protectedSymmKey, string? encPrivateKey) GetKdfAndKeyParametersForOldFormat(JsonNode rootNode, string accountEmail)
@@ -161,7 +162,7 @@ public class VaultFileParser
 
     private static VaultFileParseResult? TryParseOldFormat(JsonNode rootNode, CommandLineOptions options)
     {
-        if (rootNode["userEmail"] == null)
+        if (rootNode["userEmail"] is null)
         {
             return null;
         }
@@ -170,10 +171,10 @@ public class VaultFileParser
         options.AccountUuid = rootNode["userId"]?.GetValue<string>() ?? string.Empty;
         options.AccountEmail = rootNode["userEmail"]!.GetValue<string>();
 
-        var (emailOrSalt, kdfIterations, kdfMemory, kdfParallelism, kdfType, protectedSymmKey, encPrivateKey) =
+        (string emailOrSalt, int kdfIterations, int? kdfMemory, int? kdfParallelism, int kdfType, string protectedSymmKey, string encPrivateKey) =
             GetKdfAndKeyParametersForOldFormat(rootNode, options.AccountEmail);
 
-        return new VaultFileParseResult(true, emailOrSalt, kdfIterations, kdfMemory, kdfParallelism, kdfType, protectedSymmKey, encPrivateKey);
+        return new(true, emailOrSalt, kdfIterations, kdfMemory, kdfParallelism, kdfType, protectedSymmKey, encPrivateKey);
     }
 
     private static bool SelectAccount(List<(string uuid, string email)> accounts, string inputFile, out string selectedUuid, out string selectedEmail)
@@ -213,6 +214,7 @@ public class VaultFileParser
             {
                 continue;
             }
+
             choice = 0;
         }
 

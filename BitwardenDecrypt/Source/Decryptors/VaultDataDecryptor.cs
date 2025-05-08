@@ -8,17 +8,9 @@ using BitwardenDecryptor.Models;
 
 namespace BitwardenDecryptor.Core;
 
-public class VaultDataDecryptor
+public class VaultDataDecryptor(BitwardenSecrets secrets, CommandLineOptions options)
 {
-    private readonly BitwardenSecrets _secrets;
-    private readonly CommandLineOptions _options;
     private static readonly Regex CipherStringRegex = new(@"\d.[^,]+|[^,]+=[^""]*", RegexOptions.Compiled);
-
-    public VaultDataDecryptor(BitwardenSecrets secrets, CommandLineOptions options)
-    {
-        _secrets = secrets;
-        _options = options;
-    }
 
     private string DecryptCipherString(string cipherString, byte[] encryptionKey, byte[] macKey)
     {
@@ -52,17 +44,18 @@ public class VaultDataDecryptor
         }
         catch (DecoderFallbackException)
         {
-            if (_secrets.GeneratedEncryptionKey.Length == 0 || _secrets.GeneratedMacKey.Length == 0)
+            if (secrets.GeneratedEncryptionKey.Length == 0 || secrets.GeneratedMacKey.Length == 0)
             {
                 return $"ERROR Decrypting (UTF-8 decode failed, fallback keys unavailable): {cipherString}";
             }
 
-            (var fallbackKeyBytes, _, _, var fallbackError) = ProtectedKeyDecryptor.DecryptSymmetricKey(cipherString, _secrets.GeneratedEncryptionKey, _secrets.GeneratedMacKey);
+            (var fallbackKeyBytes, _, _, var fallbackError) = ProtectedKeyDecryptor.DecryptSymmetricKey(cipherString, secrets.GeneratedEncryptionKey, secrets.GeneratedMacKey);
 
-            if (fallbackError == null && fallbackKeyBytes != null)
+            if (fallbackError is null && fallbackKeyBytes is not null)
             {
                 return BitConverter.ToString(fallbackKeyBytes).Replace("-", "").ToLowerInvariant();
             }
+
             return $"ERROR Decrypting (UTF-8 decode failed, fallback also failed): {cipherString}";
         }
     }
@@ -96,6 +89,7 @@ public class VaultDataDecryptor
             Console.Error.WriteLine($"Base64 decoding failed for RSA ciphertext: {ex.Message}");
             return null;
         }
+
         return CryptoService.DecryptRsaOaepSha1(rsaPrivateKeyDer, ciphertext);
     }
 
@@ -103,21 +97,21 @@ public class VaultDataDecryptor
     {
         string? keyCipherString = sendNode["key"]?.GetValue<string>();
 
-        if (keyCipherString == null)
+        if (keyCipherString is null)
         {
             return sendNode;
         }
 
-        if (_secrets.GeneratedEncryptionKey.Length == 0 || _secrets.GeneratedMacKey.Length == 0)
+        if (secrets.GeneratedEncryptionKey.Length == 0 || secrets.GeneratedMacKey.Length == 0)
         {
             Console.Error.WriteLine($"ERROR: Cannot decrypt Send key as user symmetric keys are not fully available.");
             sendNode["key"] = $"ERROR: Cannot decrypt Send key - user keys unavailable.";
             return sendNode;
         }
 
-        (var sendKeyBytes, _, _, var error) = ProtectedKeyDecryptor.DecryptSymmetricKey(keyCipherString, _secrets.GeneratedEncryptionKey, _secrets.GeneratedMacKey);
+        (var sendKeyBytes, _, _, var error) = ProtectedKeyDecryptor.DecryptSymmetricKey(keyCipherString, secrets.GeneratedEncryptionKey, secrets.GeneratedMacKey);
 
-        if (error != null || sendKeyBytes == null)
+        if (error is not null || sendKeyBytes is null)
         {
             Console.Error.WriteLine($"Failed to decrypt Send key: {error}");
             sendNode["key"] = $"ERROR: Failed to decrypt Send key - {error}";
@@ -145,8 +139,10 @@ public class VaultDataDecryptor
             {
                 jsonEscapedValue = jsonEscapedValue[1..^1];
             }
+
             sendJsonString = sendJsonString.Remove(match.Index, match.Length).Insert(match.Index, jsonEscapedValue);
         }
+
         return JsonNode.Parse(sendJsonString);
     }
 
@@ -156,23 +152,23 @@ public class VaultDataDecryptor
         byte[] itemEncKey;
         byte[] itemMacKey;
 
-        if (orgId != null && _secrets.OrganizationKeys.TryGetValue(orgId, out byte[]? orgFullKey) && orgFullKey != null && orgFullKey.Length >= 64)
+        if (orgId != null && secrets.OrganizationKeys.TryGetValue(orgId, out byte[]? orgFullKey) && orgFullKey != null && orgFullKey.Length >= 64)
         {
             itemEncKey = orgFullKey.Take(32).ToArray();
             itemMacKey = orgFullKey.Skip(32).Take(32).ToArray();
         }
         else
         {
-            if (_secrets.GeneratedEncryptionKey.Length == 0 || _secrets.GeneratedMacKey.Length == 0)
+            if (secrets.GeneratedEncryptionKey.Length == 0 || secrets.GeneratedMacKey.Length == 0)
             {
                 Console.Error.WriteLine($"Warning: User symmetric keys not fully available for item {groupItemNode["id"]?.GetValue<string>()}. Defaulting to stretched keys; decryption may fail for some fields.");
-                itemEncKey = _secrets.StretchedEncryptionKey;
-                itemMacKey = _secrets.StretchedMacKey;
+                itemEncKey = secrets.StretchedEncryptionKey;
+                itemMacKey = secrets.StretchedMacKey;
             }
             else
             {
-                itemEncKey = _secrets.GeneratedEncryptionKey;
-                itemMacKey = _secrets.GeneratedMacKey;
+                itemEncKey = secrets.GeneratedEncryptionKey;
+                itemMacKey = secrets.GeneratedMacKey;
             }
         }
 
@@ -182,7 +178,7 @@ public class VaultDataDecryptor
         {
             (_, var decryptedItemEncKey, var decryptedItemMacKey, var itemKeyError) = ProtectedKeyDecryptor.DecryptSymmetricKey(individualItemKeyCipherString, itemEncKey, itemMacKey);
 
-            if (itemKeyError == null && decryptedItemEncKey != null && decryptedItemMacKey != null)
+            if (itemKeyError is null && decryptedItemEncKey is not null && decryptedItemMacKey is not null)
             {
                 itemEncKey = decryptedItemEncKey;
                 itemMacKey = decryptedItemMacKey;
@@ -192,7 +188,7 @@ public class VaultDataDecryptor
                     obj["key"] = "";
                 }
             }
-            else if (itemKeyError != null && groupItemNode is JsonObject obj)
+            else if (itemKeyError is not null && groupItemNode is JsonObject obj)
             {
                 obj["key"] = $"ERROR: Could not decrypt item key. {itemKeyError}";
             }
@@ -203,7 +199,11 @@ public class VaultDataDecryptor
 
         foreach (Match? match in matches.Reverse())
         {
-            if (match == null) continue;
+            if (match is null)
+            {
+                continue;
+            }
+
             string decryptedValue = DecryptCipherString(match.Value, itemEncKey, itemMacKey);
             string jsonEscapedValue = JsonSerializer.Serialize(decryptedValue);
 
@@ -211,6 +211,7 @@ public class VaultDataDecryptor
             {
                 jsonEscapedValue = jsonEscapedValue[1..^1];
             }
+
             itemJsonString = itemJsonString.Remove(match.Index, match.Length).Insert(match.Index, jsonEscapedValue);
         }
 
@@ -226,6 +227,7 @@ public class VaultDataDecryptor
 
             processedNode.Remove(key);
         }
+
         return processedNode;
     }
 
@@ -233,7 +235,7 @@ public class VaultDataDecryptor
     {
         JsonObject decryptedEntries = [];
 
-        if (_options.FileFormat == "EncryptedJSON")
+        if (options.FileFormat == "EncryptedJSON")
         {
             string? encryptedVaultData = rootNode["data"]?.GetValue<string>();
 
@@ -243,7 +245,7 @@ public class VaultDataDecryptor
                 Environment.Exit(1);
             }
 
-            string decryptedJsonPayload = DecryptCipherString(encryptedVaultData, _secrets.StretchedEncryptionKey, _secrets.StretchedMacKey);
+            string decryptedJsonPayload = DecryptCipherString(encryptedVaultData, secrets.StretchedEncryptionKey, secrets.StretchedMacKey);
 
             if (decryptedJsonPayload.StartsWith("ERROR"))
             {
@@ -257,19 +259,19 @@ public class VaultDataDecryptor
                 decryptedEntries[prop.Key] = prop.Value?.DeepClone();
             }
         }
-        else if (_options.FileFormat == "2024")
+        else if (options.FileFormat == "2024")
         {
-            JsonObject? orgKeysNode = rootNode[$"user_{_options.AccountUuid}_crypto_organizationKeys"]?.AsObject();
+            JsonObject? orgKeysNode = rootNode[$"user_{options.AccountUuid}_crypto_organizationKeys"]?.AsObject();
 
-            if (orgKeysNode != null && _secrets.RsaPrivateKeyDer != null)
+            if (orgKeysNode != null && secrets.RsaPrivateKeyDer != null)
             {
                 foreach (KeyValuePair<string, JsonNode?> kvp in orgKeysNode)
                 {
                     string? orgKeyCipher = kvp.Value?["key"]?.GetValue<string>() ?? kvp.Value?.GetValue<string>();
                     if (orgKeyCipher == null) continue;
 
-                    byte[]? decryptedOrgKey = DecryptRsaInternal(orgKeyCipher, _secrets.RsaPrivateKeyDer);
-                    if (decryptedOrgKey != null) _secrets.OrganizationKeys[kvp.Key] = decryptedOrgKey;
+                    byte[]? decryptedOrgKey = DecryptRsaInternal(orgKeyCipher, secrets.RsaPrivateKeyDer);
+                    if (decryptedOrgKey != null) secrets.OrganizationKeys[kvp.Key] = decryptedOrgKey;
                 }
             }
 
@@ -277,7 +279,7 @@ public class VaultDataDecryptor
 
             foreach (string groupKey in groupsToProcess)
             {
-                JsonObject? groupDataNode = rootNode[$"user_{_options.AccountUuid}_{groupKey}"]?.AsObject();
+                JsonObject? groupDataNode = rootNode[$"user_{options.AccountUuid}_{groupKey}"]?.AsObject();
                 if (groupDataNode == null) continue;
 
                 JsonArray itemsArray = [];
@@ -304,9 +306,9 @@ public class VaultDataDecryptor
                 decryptedEntries[outputKey] = itemsArray;
             }
 
-            if (_options.IncludeSends)
+            if (options.IncludeSends)
             {
-                JsonObject? sendsDataNode = rootNode[$"user_{_options.AccountUuid}_encryptedSend_sendUserEncrypted"]?.AsObject();
+                JsonObject? sendsDataNode = rootNode[$"user_{options.AccountUuid}_encryptedSend_sendUserEncrypted"]?.AsObject();
                 if (sendsDataNode != null)
                 {
                     JsonArray sendsArray = [];
@@ -327,19 +329,19 @@ public class VaultDataDecryptor
         else
         {
             JsonNode accountNode;
-            if (_options.FileFormat == "NEW")
+            if (options.FileFormat == "NEW")
             {
-                accountNode = rootNode[_options.AccountUuid!]!;
+                accountNode = rootNode[options.AccountUuid!]!;
                 JsonObject? orgKeysEncryptedNode = accountNode["keys"]?["organizationKeys"]?["encrypted"]?.AsObject();
-                if (orgKeysEncryptedNode != null && _secrets.RsaPrivateKeyDer != null)
+                if (orgKeysEncryptedNode != null && secrets.RsaPrivateKeyDer != null)
                 {
                     foreach (KeyValuePair<string, JsonNode?> kvp in orgKeysEncryptedNode)
                     {
                         string? orgKeyCipher = kvp.Value?["key"]?.GetValue<string>() ?? kvp.Value?.GetValue<string>();
                         if (orgKeyCipher != null)
                         {
-                            byte[]? decryptedOrgKey = DecryptRsaInternal(orgKeyCipher, _secrets.RsaPrivateKeyDer);
-                            if (decryptedOrgKey != null) _secrets.OrganizationKeys[kvp.Key] = decryptedOrgKey;
+                            byte[]? decryptedOrgKey = DecryptRsaInternal(orgKeyCipher, secrets.RsaPrivateKeyDer);
+                            if (decryptedOrgKey != null) secrets.OrganizationKeys[kvp.Key] = decryptedOrgKey;
                         }
                     }
                 }
@@ -348,20 +350,20 @@ public class VaultDataDecryptor
             {
                 accountNode = rootNode;
                 JsonObject? encOrgKeysNode = accountNode["encOrgKeys"]?.AsObject();
-                if (encOrgKeysNode != null && _secrets.RsaPrivateKeyDer != null)
+                if (encOrgKeysNode != null && secrets.RsaPrivateKeyDer != null)
                 {
                     foreach (KeyValuePair<string, JsonNode?> kvp in encOrgKeysNode)
                     {
                         string? orgKeyCipher = kvp.Value?.GetValue<string>();
                         if (orgKeyCipher == null) continue;
-                        byte[]? decryptedOrgKey = DecryptRsaInternal(orgKeyCipher, _secrets.RsaPrivateKeyDer);
+                        byte[]? decryptedOrgKey = DecryptRsaInternal(orgKeyCipher, secrets.RsaPrivateKeyDer);
                         if (decryptedOrgKey == null) continue;
-                        _secrets.OrganizationKeys[kvp.Key] = decryptedOrgKey;
+                        secrets.OrganizationKeys[kvp.Key] = decryptedOrgKey;
                     }
                 }
             }
 
-            if ((_options.FileFormat == "NEW" ? accountNode["data"] : accountNode) is not JsonObject dataContainerNode)
+            if ((options.FileFormat == "NEW" ? accountNode["data"] : accountNode) is not JsonObject dataContainerNode)
             {
                 Console.Error.WriteLine("ERROR: Data container not found in JSON.");
                 Environment.Exit(1);
@@ -374,27 +376,49 @@ public class VaultDataDecryptor
                 string outputKey = groupKeyOriginal.Contains('_') ? groupKeyOriginal[..groupKeyOriginal.IndexOf('_')] : groupKeyOriginal;
                 outputKey = outputKey.Replace("ciphers", "items");
 
-                if (groupKeyOriginal == "sends" && !_options.IncludeSends) continue;
-                if (outputKey == "sends" && !_options.IncludeSends && groupKeyOriginal.StartsWith("sends_")) continue;
+                if (groupKeyOriginal == "sends" && !options.IncludeSends)
+                {
+                    continue;
+                }
+
+                if (outputKey == "sends" && !options.IncludeSends && groupKeyOriginal.StartsWith("sends_"))
+                {
+                    continue;
+                }
 
                 string[] supportedOutputKeys = ["folders", "items", "collections", "organizations", "sends"];
-                if (!supportedOutputKeys.Contains(outputKey)) continue;
+                
+                if (!supportedOutputKeys.Contains(outputKey))
+                {
+                    continue;
+                }
 
                 JsonNode? actualDataNode = groupKvp.Value;
-                if (_options.FileFormat == "NEW" && outputKey != "organizations" && outputKey != "sends" && groupKvp.Value?["encrypted"] != null)
+
+                if (options.FileFormat == "NEW" && outputKey != "organizations" && outputKey != "sends" && groupKvp.Value?["encrypted"] is not null)
                 {
                     actualDataNode = groupKvp.Value["encrypted"];
                 }
 
-                if (actualDataNode == null || actualDataNode is not JsonObject groupDataObj) continue;
+                if (actualDataNode is null || actualDataNode is not JsonObject groupDataObj)
+                {
+                    continue;
+                }
 
                 JsonArray itemsArray = [];
+
                 foreach (KeyValuePair<string, JsonNode?> itemKvp in groupDataObj)
                 {
-                    if (itemKvp.Value is not JsonObject itemObj) continue;
-                    if (outputKey == "sends") itemsArray.Add(DecryptSend(itemObj.DeepClone()));
-                    else itemsArray.Add(ProcessGroupItem(itemObj.DeepClone()));
+                    if (itemKvp.Value is not JsonObject itemObj)
+                    {
+                        continue;
+                    }
+
+                    itemsArray.Add(outputKey == "sends"
+                        ? DecryptSend(itemObj.DeepClone())
+                        : ProcessGroupItem(itemObj.DeepClone()));
                 }
+
                 decryptedEntries[outputKey] = itemsArray;
             }
         }
