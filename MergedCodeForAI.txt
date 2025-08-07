@@ -1,3 +1,9 @@
+<file path="D:\Parsa Stuff\Visual Studio\BitwardenDecrypt\BitwardenDecrypt\Source\AccountInfo.cs">
+namespace BitwardenDecryptor.Models;
+
+public record AccountInfo(string Uuid, string Email);
+</file>
+
 <file path="D:\Parsa Stuff\Visual Studio\BitwardenDecrypt\BitwardenDecrypt\Source\BitwardenSecrets.cs">
 namespace BitwardenDecryptor.Models;
 
@@ -79,6 +85,12 @@ public static class ConsolePasswordReader
         return password.ToString();
     }
 }
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\BitwardenDecrypt\BitwardenDecrypt\Source\DecryptionResult.cs">
+namespace BitwardenDecryptor.Models;
+
+public record DecryptionResult(byte[]? Plaintext, string? Error);
 </file>
 
 <file path="D:\Parsa Stuff\Visual Studio\BitwardenDecrypt\BitwardenDecrypt\Source\Program.cs">
@@ -200,20 +212,29 @@ public static class Program
 }
 </file>
 
+<file path="D:\Parsa Stuff\Visual Studio\BitwardenDecrypt\BitwardenDecrypt\Source\SymmetricKeyDecryptionResult.cs">
+namespace BitwardenDecryptor.Models;
+
+public record SymmetricKeyDecryptionResult(byte[]? FullKey, byte[]? EncKey, byte[]? MacKey, string? Error);
+</file>
+
 <file path="D:\Parsa Stuff\Visual Studio\BitwardenDecrypt\BitwardenDecrypt\Source\VaultFileParser.cs">
 using System.Text.Json.Nodes;
+using BitwardenDecryptor.Models;
 using BitwardenDecryptor.Utils;
 
 namespace BitwardenDecryptor.Core;
 
 public static class VaultFileParser
 {
+    private record KdfAndKeyParameters(string EmailOrSalt, int KdfIterations, int? KdfMemory, int? KdfParallelism, int KdfType, string ProtectedSymmKey, string? EncPrivateKey);
+
     public static VaultMetadata? Parse(JsonNode rootNode, string inputFile)
     {
-        var result = TryParseEncryptedJsonFormat(rootNode)
-                     ?? TryParse2024Format(rootNode, inputFile)
-                     ?? TryParseNewFormat(rootNode, inputFile)
-                     ?? TryParseOldFormat(rootNode);
+        VaultMetadata? result = TryParseEncryptedJsonFormat(rootNode)
+            ?? TryParse2024Format(rootNode, inputFile)
+            ?? TryParseNewFormat(rootNode, inputFile)
+            ?? TryParseOldFormat(rootNode);
 
         if (result is not null)
         {
@@ -223,6 +244,7 @@ public static class VaultFileParser
         Console.Error.WriteLine("\nERROR: Could not determine the format of the provided JSON file or find any account data within it.");
         Console.Error.WriteLine("Please ensure this is a valid Bitwarden `data.json` export file.");
         Console.Error.WriteLine("The file may be in an unsupported format, corrupted, or not a Bitwarden export at all.");
+        
         return null;
     }
 
@@ -239,18 +261,26 @@ public static class VaultFileParser
         int kdfType = rootNode["kdf"]?.GetValue<int>() ?? 0;
         string protectedSymmKeyOrValidation = rootNode["encKeyValidation_DO_NOT_EDIT"]!.GetValue<string>();
 
-        return new VaultMetadata(fileFormat, emailOrSalt, kdfIterations, null, null, kdfType, protectedSymmKeyOrValidation, null);
+        return new(
+            fileFormat,
+            emailOrSalt,
+            kdfIterations,
+            null,
+            null,
+            kdfType,
+            protectedSymmKeyOrValidation,
+            null);
     }
 
-    private static List<(string uuid, string email)> Extract2024FormatAccounts(JsonObject accountsNode)
+    private static List<AccountInfo> Extract2024FormatAccounts(JsonObject accountsNode)
     {
         return accountsNode
             .Where(kvp => Guid.TryParse(kvp.Key, out _) && kvp.Value != null && kvp.Value.AsObject().Count != 0)
-            .Select(kvp => (uuid: kvp.Key, email: kvp.Value!["email"]!.GetValue<string>()))
+            .Select(kvp => new AccountInfo(kvp.Key, kvp.Value!["email"]!.GetValue<string>()))
             .ToList();
     }
 
-    private static (string emailOrSalt, int kdfIterations, int? kdfMemory, int? kdfParallelism, int kdfType, string protectedSymmKey, string? encPrivateKey) GetKdfAndKeyParametersFor2024Format(JsonNode rootNode, string accountUuid, string accountEmail)
+    private static KdfAndKeyParameters GetKdfAndKeyParametersFor2024Format(JsonNode rootNode, string accountUuid, string accountEmail)
     {
         string emailOrSalt = accountEmail;
         JsonNode kdfConfigNode = rootNode[$"user_{accountUuid}_kdfConfig_kdfConfig"]!;
@@ -260,7 +290,15 @@ public static class VaultFileParser
         int kdfType = kdfConfigNode["kdfType"]!.GetValue<int>();
         string protectedSymmKey = rootNode[$"user_{accountUuid}_masterPassword_masterKeyEncryptedUserKey"]!.GetValue<string>();
         string? encPrivateKey = rootNode[$"user_{accountUuid}_crypto_privateKey"]?.GetValue<string>();
-        return (emailOrSalt, kdfIterations, kdfMemory, kdfParallelism, kdfType, protectedSymmKey, encPrivateKey);
+        
+        return new(
+            emailOrSalt,
+            kdfIterations,
+            kdfMemory,
+            kdfParallelism,
+            kdfType,
+            protectedSymmKey,
+            encPrivateKey);
     }
 
     private static VaultMetadata? TryParse2024Format(JsonNode rootNode, string inputFile)
@@ -271,30 +309,43 @@ public static class VaultFileParser
         }
 
         string fileFormat = "2024";
-        List<(string uuid, string email)> validAccounts = Extract2024FormatAccounts(accountsNode);
+        List<AccountInfo> validAccounts = Extract2024FormatAccounts(accountsNode);
 
-        var selectedAccount = AccountSelector.SelectAccount(validAccounts, inputFile);
+        AccountInfo? selectedAccount = AccountSelector.SelectAccount(validAccounts, inputFile);
+        
         if (selectedAccount is null)
         {
             return null;
         }
-        var (selectedAccountUuid, selectedAccountEmail) = selectedAccount.Value;
 
-        var (emailOrSalt, kdfIterations, kdfMemory, kdfParallelism, kdfType, protectedSymmKey, encPrivateKey) =
+        string selectedAccountUuid = selectedAccount.Uuid;
+        string selectedAccountEmail = selectedAccount.Email;
+
+        KdfAndKeyParameters kdfParams =
             GetKdfAndKeyParametersFor2024Format(rootNode, selectedAccountUuid, selectedAccountEmail);
 
-        return new VaultMetadata(fileFormat, emailOrSalt, kdfIterations, kdfMemory, kdfParallelism, kdfType, protectedSymmKey, encPrivateKey, selectedAccountEmail, selectedAccountUuid);
+        return new(
+            fileFormat,
+            kdfParams.EmailOrSalt,
+            kdfParams.KdfIterations,
+            kdfParams.KdfMemory,
+            kdfParams.KdfParallelism,
+            kdfParams.KdfType,
+            kdfParams.ProtectedSymmKey,
+            kdfParams.EncPrivateKey,
+            selectedAccountEmail,
+            selectedAccountUuid);
     }
 
-    private static List<(string uuid, string email)> ExtractNewFormatAccounts(JsonNode rootNode)
+    private static List<AccountInfo> ExtractNewFormatAccounts(JsonNode rootNode)
     {
         return rootNode.AsObject()
             .Where(kvp => Guid.TryParse(kvp.Key, out _) && kvp.Value?["profile"]?["email"] != null)
-            .Select(kvp => (uuid: kvp.Key, email: kvp.Value!["profile"]!["email"]!.GetValue<string>()))
+            .Select(kvp => new AccountInfo(kvp.Key, kvp.Value!["profile"]!["email"]!.GetValue<string>()))
             .ToList();
     }
 
-    private static (string emailOrSalt, int kdfIterations, int? kdfMemory, int? kdfParallelism, int kdfType, string protectedSymmKey, string? encPrivateKey) GetKdfAndKeyParametersForNewFormat(JsonNode rootNode, string accountUuid, string accountEmail)
+    private static KdfAndKeyParameters GetKdfAndKeyParametersForNewFormat(JsonNode rootNode, string accountUuid, string accountEmail)
     {
         JsonNode accountNode = rootNode[accountUuid]!;
         string emailOrSalt = accountEmail;
@@ -306,12 +357,20 @@ public static class VaultFileParser
         JsonNode keysNode = accountNode["keys"]!;
         string protectedSymmKey = keysNode["masterKeyEncryptedUserKey"]?.GetValue<string>() ?? keysNode["cryptoSymmetricKey"]!["encrypted"]!.GetValue<string>();
         string? encPrivateKey = keysNode["privateKey"]!["encrypted"]!.GetValue<string>();
-        return (emailOrSalt, kdfIterations, kdfMemory, kdfParallelism, kdfType, protectedSymmKey, encPrivateKey);
+        
+        return new(
+            emailOrSalt,
+            kdfIterations,
+            kdfMemory,
+            kdfParallelism,
+            kdfType,
+            protectedSymmKey,
+            encPrivateKey);
     }
 
     private static VaultMetadata? TryParseNewFormat(JsonNode rootNode, string inputFile)
     {
-        List<(string uuid, string email)> potentialNewFormatAccounts = ExtractNewFormatAccounts(rootNode);
+        List<AccountInfo> potentialNewFormatAccounts = ExtractNewFormatAccounts(rootNode);
 
         if (potentialNewFormatAccounts.Count == 0)
         {
@@ -319,28 +378,39 @@ public static class VaultFileParser
         }
 
         string fileFormat = "NEW";
-        
+
         var selectedAccount = AccountSelector.SelectAccount(potentialNewFormatAccounts, inputFile);
         if (selectedAccount is null)
         {
             return null;
         }
-        var (selectedAccountUuid, selectedAccountEmail) = selectedAccount.Value;
+        string selectedAccountUuid = selectedAccount.Uuid;
+        string selectedAccountEmail = selectedAccount.Email;
 
-        var (emailOrSalt, kdfIterations, kdfMemory, kdfParallelism, kdfType, protectedSymmKey, encPrivateKey) =
+        KdfAndKeyParameters kdfParams =
             GetKdfAndKeyParametersForNewFormat(rootNode, selectedAccountUuid, selectedAccountEmail);
 
-        return new VaultMetadata(fileFormat, emailOrSalt, kdfIterations, kdfMemory, kdfParallelism, kdfType, protectedSymmKey, encPrivateKey, selectedAccountEmail, selectedAccountUuid);
+        return new(
+            fileFormat,
+            kdfParams.EmailOrSalt,
+            kdfParams.KdfIterations,
+            kdfParams.KdfMemory,
+            kdfParams.KdfParallelism,
+            kdfParams.KdfType,
+            kdfParams.ProtectedSymmKey,
+            kdfParams.EncPrivateKey,
+            selectedAccountEmail,
+            selectedAccountUuid);
     }
 
-    private static (string emailOrSalt, int kdfIterations, int? kdfMemory, int? kdfParallelism, int kdfType, string protectedSymmKey, string? encPrivateKey) GetKdfAndKeyParametersForOldFormat(JsonNode rootNode, string accountEmail)
+    private static KdfAndKeyParameters GetKdfAndKeyParametersForOldFormat(JsonNode rootNode, string accountEmail)
     {
         string emailOrSalt = accountEmail;
         int kdfIterations = rootNode["kdfIterations"]!.GetValue<int>();
         int kdfType = rootNode["kdf"]?.GetValue<int>() ?? 0;
         string protectedSymmKey = rootNode["encKey"]!.GetValue<string>();
         string? encPrivateKey = rootNode["encPrivateKey"]?.GetValue<string>();
-        return (emailOrSalt, kdfIterations, null, null, kdfType, protectedSymmKey, encPrivateKey);
+        return new KdfAndKeyParameters(emailOrSalt, kdfIterations, null, null, kdfType, protectedSymmKey, encPrivateKey);
     }
 
     private static VaultMetadata? TryParseOldFormat(JsonNode rootNode)
@@ -354,10 +424,20 @@ public static class VaultFileParser
         string accountUuid = rootNode["userId"]?.GetValue<string>() ?? string.Empty;
         string accountEmail = rootNode["userEmail"]!.GetValue<string>();
 
-        (string emailOrSalt, int kdfIterations, int? kdfMemory, int? kdfParallelism, int kdfType, string protectedSymmKey, string? encPrivateKey) =
+        KdfAndKeyParameters kdfParams =
             GetKdfAndKeyParametersForOldFormat(rootNode, accountEmail);
 
-        return new VaultMetadata(fileFormat, emailOrSalt, kdfIterations, kdfMemory, kdfParallelism, kdfType, protectedSymmKey, encPrivateKey, accountEmail, accountUuid);
+        return new(
+            fileFormat,
+            kdfParams.EmailOrSalt,
+            kdfParams.KdfIterations,
+            kdfParams.KdfMemory,
+            kdfParams.KdfParallelism,
+            kdfParams.KdfType,
+            kdfParams.ProtectedSymmKey,
+            kdfParams.EncPrivateKey,
+            accountEmail,
+            accountUuid);
     }
 }
 </file>
@@ -536,63 +616,66 @@ public class BitwardenDecryptor(CommandLineOptions options)
 
 <file path="D:\Parsa Stuff\Visual Studio\BitwardenDecrypt\BitwardenDecrypt\Source\Decryptors\ProtectedKeyDecryptor.cs">
 using BitwardenDecryptor.Crypto;
+using BitwardenDecryptor.Models;
 
 namespace BitwardenDecryptor.Core;
 
 public static class ProtectedKeyDecryptor
 {
-    public static (byte[]? FullKey, byte[]? EncKey, byte[]? MacKey, string? Error) DecryptSymmetricKey(string cipherString, byte[] masterKey, byte[] masterMacKey, bool isExportValidationKey = false)
+    public static SymmetricKeyDecryptionResult DecryptSymmetricKey(string cipherString, byte[] masterKey, byte[] masterMacKey, bool isExportValidationKey = false)
     {
         if (string.IsNullOrEmpty(cipherString))
         {
-            return (null, null, null, "CipherString is empty.");
+            return new SymmetricKeyDecryptionResult(null, null, null, "CipherString is empty.");
         }
 
         string[] parts = cipherString.Split('.');
 
         if (parts.Length < 2)
         {
-            return (null, null, null, "Invalid CipherString format.");
+            return new SymmetricKeyDecryptionResult(null, null, null, "Invalid CipherString format.");
         }
 
         if (!int.TryParse(parts[0], out int encType))
         {
-            return (null, null, null, "Invalid encryption type in CipherString.");
+            return new SymmetricKeyDecryptionResult(null, null, null, "Invalid encryption type in CipherString.");
         }
 
-        (byte[]? cleartextBytes, string? error) = CryptoService.VerifyAndDecryptAesCbc(masterKey, masterMacKey, cipherString);
+        DecryptionResult decryptionResult = CryptoService.VerifyAndDecryptAesCbc(masterKey, masterMacKey, cipherString);
 
-        if (error != null || cleartextBytes == null)
+        if (decryptionResult.Error != null || decryptionResult.Plaintext == null)
         {
-            return (null, null, null, error);
+            return new SymmetricKeyDecryptionResult(null, null, null, decryptionResult.Error);
         }
+
+        byte[] cleartextBytes = decryptionResult.Plaintext;
 
         if (!isExportValidationKey && encType == 2 && cleartextBytes.Length < 64)
         {
-            return (null, null, null, "Decrypted key is too short. Likely wrong password (for data.json user key).");
+            return new SymmetricKeyDecryptionResult(null, null, null, "Decrypted key is too short. Likely wrong password (for data.json user key).");
         }
 
         if ((encType == 2 || encType == 0) && cleartextBytes.Length >= 64)
         {
             byte[] enc = cleartextBytes.Take(32).ToArray();
             byte[] mac = cleartextBytes.Skip(32).Take(32).ToArray();
-            return (cleartextBytes, enc, mac, null);
+            return new SymmetricKeyDecryptionResult(cleartextBytes, enc, mac, null);
         }
 
-        return (cleartextBytes, null, null, null);
+        return new SymmetricKeyDecryptionResult(cleartextBytes, null, null, null);
     }
 
     public static byte[]? DecryptRsaPrivateKeyBytes(string cipherString, byte[] encryptionKey, byte[] macKey)
     {
-        (byte[]? cleartext, string? error) = CryptoService.VerifyAndDecryptAesCbc(encryptionKey, macKey, cipherString);
+        DecryptionResult result = CryptoService.VerifyAndDecryptAesCbc(encryptionKey, macKey, cipherString);
 
-        if (error != null)
+        if (result.Error != null)
         {
-            Console.Error.WriteLine($"ERROR decrypting RSA private key wrapper: {error}");
+            Console.Error.WriteLine($"ERROR decrypting RSA private key wrapper: {result.Error}");
             return null;
         }
 
-        return cleartext;
+        return result.Plaintext;
     }
 }
 </file>
@@ -661,16 +744,16 @@ public class VaultItemDecryptor(BitwardenSecrets secrets)
             return $"ERROR Decrypting: Invalid encType {cipherString}";
         }
 
-        (byte[]? cleartextBytes, string? error) = CryptoService.VerifyAndDecryptAesCbc(encryptionKey, macKey, cipherString);
+        DecryptionResult decryptionResult = CryptoService.VerifyAndDecryptAesCbc(encryptionKey, macKey, cipherString);
 
-        if (error != null || cleartextBytes == null)
+        if (decryptionResult.Error != null || decryptionResult.Plaintext == null)
         {
-            return $"ERROR: {error}. CipherString not decrypted: {cipherString}";
+            return $"ERROR: {decryptionResult.Error}. CipherString not decrypted: {cipherString}";
         }
 
         try
         {
-            return Encoding.UTF8.GetString(cleartextBytes);
+            return Encoding.UTF8.GetString(decryptionResult.Plaintext);
         }
         catch (DecoderFallbackException)
         {
@@ -679,11 +762,11 @@ public class VaultItemDecryptor(BitwardenSecrets secrets)
                 return $"ERROR Decrypting (UTF-8 decode failed, fallback keys unavailable): {cipherString}";
             }
 
-            (var fallbackKeyBytes, _, _, var fallbackError) = ProtectedKeyDecryptor.DecryptSymmetricKey(cipherString, secrets.GeneratedEncryptionKey, secrets.GeneratedMacKey);
+            SymmetricKeyDecryptionResult fallbackResult = ProtectedKeyDecryptor.DecryptSymmetricKey(cipherString, secrets.GeneratedEncryptionKey, secrets.GeneratedMacKey);
 
-            if (fallbackError is null && fallbackKeyBytes is not null)
+            if (fallbackResult.Error is null && fallbackResult.FullKey is not null)
             {
-                return BitConverter.ToString(fallbackKeyBytes).Replace("-", "").ToLowerInvariant();
+                return BitConverter.ToString(fallbackResult.FullKey).Replace("-", "").ToLowerInvariant();
             }
 
             return $"ERROR Decrypting (UTF-8 decode failed, fallback also failed): {cipherString}";
@@ -745,18 +828,18 @@ public class VaultItemDecryptor(BitwardenSecrets secrets)
             return sendNode;
         }
 
-        (var sendKeyBytes, _, _, var error) = ProtectedKeyDecryptor.DecryptSymmetricKey(keyCipherString, secrets.GeneratedEncryptionKey, secrets.GeneratedMacKey);
+        SymmetricKeyDecryptionResult sendKeyResult = ProtectedKeyDecryptor.DecryptSymmetricKey(keyCipherString, secrets.GeneratedEncryptionKey, secrets.GeneratedMacKey);
 
-        if (error is not null || sendKeyBytes is null)
+        if (sendKeyResult.Error is not null || sendKeyResult.FullKey is null)
         {
-            Console.Error.WriteLine($"Failed to decrypt Send key: {error}");
-            sendNode["key"] = $"ERROR: Failed to decrypt Send key - {error}";
+            Console.Error.WriteLine($"Failed to decrypt Send key: {sendKeyResult.Error}");
+            sendNode["key"] = $"ERROR: Failed to decrypt Send key - {sendKeyResult.Error}";
             return sendNode;
         }
 
         byte[] salt = Encoding.UTF8.GetBytes("bitwarden-send");
         byte[] info = Encoding.UTF8.GetBytes("send");
-        byte[] derivedSendKeyMaterial = HKDF.DeriveKey(HashAlgorithmName.SHA256, sendKeyBytes, 64, salt, info);
+        byte[] derivedSendKeyMaterial = HKDF.DeriveKey(HashAlgorithmName.SHA256, sendKeyResult.FullKey, 64, salt, info);
 
         byte[] sendEncKey = derivedSendKeyMaterial.Take(32).ToArray();
         byte[] sendMacKey = derivedSendKeyMaterial.Skip(32).Take(32).ToArray();
@@ -812,21 +895,21 @@ public class VaultItemDecryptor(BitwardenSecrets secrets)
 
         if (!string.IsNullOrEmpty(individualItemKeyCipherString))
         {
-            (_, var decryptedItemEncKey, var decryptedItemMacKey, var itemKeyError) = ProtectedKeyDecryptor.DecryptSymmetricKey(individualItemKeyCipherString, itemEncKey, itemMacKey);
+            SymmetricKeyDecryptionResult itemKeyResult = ProtectedKeyDecryptor.DecryptSymmetricKey(individualItemKeyCipherString, itemEncKey, itemMacKey);
 
-            if (itemKeyError is null && decryptedItemEncKey is not null && decryptedItemMacKey is not null)
+            if (itemKeyResult.Error is null && itemKeyResult.EncKey is not null && itemKeyResult.MacKey is not null)
             {
-                itemEncKey = decryptedItemEncKey;
-                itemMacKey = decryptedItemMacKey;
+                itemEncKey = itemKeyResult.EncKey;
+                itemMacKey = itemKeyResult.MacKey;
 
                 if (groupItemNode is JsonObject obj)
                 {
                     obj["key"] = "";
                 }
             }
-            else if (itemKeyError is not null && groupItemNode is JsonObject obj)
+            else if (itemKeyResult.Error is not null && groupItemNode is JsonObject obj)
             {
-                obj["key"] = $"ERROR: Could not decrypt item key. {itemKeyError}";
+                obj["key"] = $"ERROR: Could not decrypt item key. {itemKeyResult.Error}";
             }
         }
 
@@ -871,6 +954,7 @@ public class VaultItemDecryptor(BitwardenSecrets secrets)
 
 <file path="D:\Parsa Stuff\Visual Studio\BitwardenDecrypt\BitwardenDecrypt\Source\Services\CryptoService.cs">
 using System.Security.Cryptography;
+using BitwardenDecryptor.Models;
 using Isopoh.Cryptography.Argon2;
 using Isopoh.Cryptography.SecureArray;
 
@@ -940,20 +1024,20 @@ public static class CryptoService
         return msPlain.ToArray();
     }
 
-    public static (byte[]? Plaintext, string? Error) VerifyAndDecryptAesCbc(byte[] encryptionKey, byte[] macKey, string cipherString)
+    public static DecryptionResult VerifyAndDecryptAesCbc(byte[] encryptionKey, byte[] macKey, string cipherString)
     {
         string[] parts = cipherString.Split('.');
 
         if (parts.Length < 2)
         {
-            return (null, "Invalid CipherString format (missing type or data).");
+            return new DecryptionResult(null, "Invalid CipherString format (missing type or data).");
         }
 
         string[] dataParts = parts[1].Split('|');
 
         if (dataParts.Length < 3)
         {
-            return (null, "Invalid CipherString format (missing IV, ciphertext, or MAC).");
+            return new DecryptionResult(null, "Invalid CipherString format (missing IV, ciphertext, or MAC).");
         }
 
         byte[] iv;
@@ -968,7 +1052,7 @@ public static class CryptoService
         }
         catch (FormatException ex)
         {
-            return (null, $"Base64 decoding failed: {ex.Message}");
+            return new DecryptionResult(null, $"Base64 decoding failed: {ex.Message}");
         }
 
         byte[] dataToMac = [.. iv, .. ciphertext];
@@ -976,17 +1060,17 @@ public static class CryptoService
 
         if (!mac.SequenceEqual(calculatedMac))
         {
-            return (null, "MAC mismatch.");
+            return new DecryptionResult(null, "MAC mismatch.");
         }
 
         try
         {
             byte[]? decrypted = DecryptAesCbc(encryptionKey, iv, ciphertext);
-            return (decrypted, null);
+            return new DecryptionResult(decrypted, null);
         }
         catch (CryptographicException ex)
         {
-            return (null, $"Decryption failed (possibly wrong password/key or padding): {ex.Message}");
+            return new DecryptionResult(null, $"Decryption failed (possibly wrong password/key or padding): {ex.Message}");
         }
     }
 
@@ -1072,13 +1156,6 @@ public class KeyDerivationService
         };
     }
 
-    private static byte[] DetermineKdfSaltInput(string fileFormat, VaultFileParseResult parseResult, string email)
-    {
-        return fileFormat == "EncryptedJSON"
-            ? Encoding.UTF8.GetBytes(parseResult.EmailOrSalt)
-            : Encoding.UTF8.GetBytes(email);
-    }
-
     private static void DeriveMasterKey(BitwardenSecrets secrets, byte[] kdfSaltInput)
     {
         if (secrets.KdfType == 1) // Argon2id
@@ -1133,18 +1210,18 @@ public class KeyDerivationService
     private static void DecryptAndSetSymmetricKeys(BitwardenSecrets secrets, string fileFormat)
     {
         bool isForExportValidation = fileFormat == "EncryptedJSON";
-        (byte[]? symKey, byte[]? symEncKey, byte[]? symMacKey, string? error) = ProtectedKeyDecryptor.DecryptSymmetricKey(
+        SymmetricKeyDecryptionResult result = ProtectedKeyDecryptor.DecryptSymmetricKey(
             secrets.ProtectedSymmetricKeyCipherString,
             secrets.StretchedEncryptionKey,
             secrets.StretchedMacKey,
             isForExportValidation);
 
-        HandleSymmetricKeyDecryptionResult(error, symKey);
+        HandleSymmetricKeyDecryptionResult(result.Error, result.FullKey);
 
         // At this point, symKey is guaranteed to be non-null if HandleSymmetricKeyDecryptionResult did not exit.
-        secrets.GeneratedSymmetricKey = symKey!;
-        secrets.GeneratedEncryptionKey = symEncKey ?? [];
-        secrets.GeneratedMacKey = symMacKey ?? [];
+        secrets.GeneratedSymmetricKey = result.FullKey!;
+        secrets.GeneratedEncryptionKey = result.EncKey ?? [];
+        secrets.GeneratedMacKey = result.MacKey ?? [];
     }
 
     private static void HandleSymmetricKeyDecryptionResult(string? error, byte[]? symKey)
@@ -1197,11 +1274,13 @@ public class KeyDerivationService
 </file>
 
 <file path="D:\Parsa Stuff\Visual Studio\BitwardenDecrypt\BitwardenDecrypt\Source\Utils\AccountSelector.cs">
+using BitwardenDecryptor.Models;
+
 namespace BitwardenDecryptor.Utils;
 
 public static class AccountSelector
 {
-    public static (string uuid, string email)? SelectAccount(IReadOnlyList<(string uuid, string email)> accounts, string inputFile)
+    public static AccountInfo? SelectAccount(IReadOnlyList<AccountInfo> accounts, string inputFile)
     {
         if (accounts.Count == 0)
         {
@@ -1218,7 +1297,7 @@ public static class AccountSelector
 
         for (int i = 0; i < accounts.Count; i++)
         {
-            Console.WriteLine($" {i + 1}:\t{accounts[i].email}");
+            Console.WriteLine($" {i + 1}:\t{accounts[i].Email}");
         }
 
         int choice = 0;

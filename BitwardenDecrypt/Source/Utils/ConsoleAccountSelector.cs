@@ -1,14 +1,17 @@
+using System;
+using System.Collections.Generic;
+using BitwardenDecryptor.Core.VaultParsing;
 using BitwardenDecryptor.Models;
 
 namespace BitwardenDecryptor.Utils;
 
-public static class AccountSelector
+public class ConsoleAccountSelector : IAccountSelector
 {
-    public static AccountInfo? SelectAccount(IReadOnlyList<AccountInfo> accounts, string inputFile)
+    public AccountInfo? SelectAccount(IReadOnlyList<AccountInfo> accounts, string context)
     {
         if (accounts.Count == 0)
         {
-            Console.Error.WriteLine($"ERROR: No Accounts Found In {inputFile}");
+            Console.Error.WriteLine($"ERROR: No Accounts Found In {context}");
             return null;
         }
 

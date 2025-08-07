@@ -1,6 +1,9 @@
-﻿using System.Text.Encodings.Web;
+﻿using System.Collections.Generic;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using BitwardenDecryptor.Core.VaultParsing;
+using BitwardenDecryptor.Core.VaultParsing.FormatParsers;
 using BitwardenDecryptor.Models;
 using BitwardenDecryptor.Utils;
 
@@ -19,7 +22,7 @@ public class BitwardenDecryptor(CommandLineOptions options)
             return null;
         }
 
-        VaultMetadata? metadata = VaultFileParser.Parse(rootNode, options.InputFile);
+        VaultMetadata? metadata = ParseVaultFile(rootNode);
         
         if (metadata is null)
         {
@@ -47,6 +50,20 @@ public class BitwardenDecryptor(CommandLineOptions options)
         };
 
         return finalOutputObject.ToJsonString(jsonSerializerOptions);
+    }
+
+    private VaultMetadata? ParseVaultFile(JsonNode rootNode)
+    {
+        var accountSelector = new ConsoleAccountSelector();
+        var formatParsers = new List<IVaultFormatParser>
+        {
+            new EncryptedJsonParser(),
+            new Format2024Parser(),
+            new NewFormatParser(),
+            new OldFormatParser(),
+        };
+        var vaultParser = new VaultParser(formatParsers);
+        return vaultParser.Parse(rootNode, accountSelector, options.InputFile);
     }
 
     private JsonNode? LoadAndParseInputFile()
