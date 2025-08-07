@@ -36,26 +36,36 @@ public static class Program
 
         rootCommand.SetHandler((inputFile, includeSends, outputFile, save) =>
         {
-            string? finalOutputFile = outputFile;
-            if (save && string.IsNullOrEmpty(finalOutputFile))
+            try
             {
-                string? directory = Path.GetDirectoryName(inputFile);
-                string filenameWithoutExt = Path.GetFileNameWithoutExtension(inputFile);
-                string newFilename = $"{filenameWithoutExt}.decrypted.json";
-                finalOutputFile = string.IsNullOrEmpty(directory)
-                    ? newFilename
-                    : Path.Combine(directory, newFilename);
+                string? finalOutputFile = outputFile;
+                if (save && string.IsNullOrEmpty(finalOutputFile))
+                {
+                    string? directory = Path.GetDirectoryName(inputFile);
+                    string filenameWithoutExt = Path.GetFileNameWithoutExtension(inputFile);
+                    string newFilename = $"{filenameWithoutExt}.decrypted.json";
+                    finalOutputFile = string.IsNullOrEmpty(directory)
+                        ? newFilename
+                        : Path.Combine(directory, newFilename);
+                }
+
+                CommandLineOptions options = new()
+                {
+                    InputFile = inputFile,
+                    IncludeSends = includeSends,
+                    OutputFile = finalOutputFile
+                };
+
+                RunDecryption(options);
             }
-
-            CommandLineOptions options = new()
+            catch (Exception ex)
             {
-                InputFile = inputFile,
-                IncludeSends = includeSends,
-                OutputFile = finalOutputFile
-            };
-
-            RunDecryption(options);
-        },
+                Console.Error.WriteLine("\nAn unexpected error occurred:");
+                Console.Error.WriteLine($"ERROR: {ex.Message}");
+                Console.Error.WriteLine("\nPlease report this issue if you believe it's a bug.");
+                Environment.ExitCode = 1;
+            }
+        }, 
         inputFileArgument,
         includeSendsOption,
         outputFileOption,

@@ -36,7 +36,9 @@ public class VaultFileParser
             return result;
         }
 
-        Console.Error.WriteLine("ERROR: Could not determine data file format or find account data.");
+        Console.Error.WriteLine("\nERROR: Could not determine the format of the provided JSON file or find any account data within it.");
+        Console.Error.WriteLine("Please ensure this is a valid Bitwarden `data.json` export file.");
+        Console.Error.WriteLine("The file may be in an unsupported format, corrupted, or not a Bitwarden export at all.");
 
         return new(false);
     }
