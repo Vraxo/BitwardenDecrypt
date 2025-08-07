@@ -6,40 +6,33 @@ namespace BitwardenDecryptor.Core;
 
 public class KeyDerivationService
 {
-    public static BitwardenSecrets DeriveKeys(VaultFileParseResult parseResult, string password, string fileFormat)
+    public static BitwardenSecrets DeriveKeys(VaultMetadata metadata, string password)
     {
-        BitwardenSecrets secrets = InitializeSecrets(parseResult, password);
-        byte[] kdfSaltInput = DetermineKdfSaltInput(fileFormat, parseResult, secrets.Email);
+        BitwardenSecrets secrets = InitializeSecrets(metadata, password);
+        byte[] kdfSaltInput = Encoding.UTF8.GetBytes(metadata.KdfSalt);
 
         DeriveMasterKey(secrets, kdfSaltInput);
         DeriveMasterPasswordHash(secrets);
         DeriveStretchedKeys(secrets);
-        DecryptAndSetSymmetricKeys(secrets, fileFormat);
+        DecryptAndSetSymmetricKeys(secrets, metadata.FileFormat);
         DecryptAndSetRsaPrivateKey(secrets);
 
         return secrets;
     }
 
-    private static BitwardenSecrets InitializeSecrets(VaultFileParseResult parseResult, string password)
+    private static BitwardenSecrets InitializeSecrets(VaultMetadata metadata, string password)
     {
         return new()
         {
-            Email = parseResult.EmailOrSalt,
+            Email = metadata.AccountEmail ?? metadata.KdfSalt,
             MasterPasswordBytes = Encoding.UTF8.GetBytes(password),
-            KdfIterations = parseResult.KdfIterations,
-            KdfMemory = parseResult.KdfMemory,
-            KdfParallelism = parseResult.KdfParallelism,
-            KdfType = parseResult.KdfType,
-            ProtectedSymmetricKeyCipherString = parseResult.ProtectedSymmetricKeyOrValidation,
-            ProtectedRsaPrivateKeyCipherString = parseResult.EncPrivateKeyCipher
+            KdfIterations = metadata.KdfIterations,
+            KdfMemory = metadata.KdfMemory,
+            KdfParallelism = metadata.KdfParallelism,
+            KdfType = metadata.KdfType,
+            ProtectedSymmetricKeyCipherString = metadata.ProtectedSymmetricKey,
+            ProtectedRsaPrivateKeyCipherString = metadata.ProtectedRsaPrivateKey
         };
-    }
-
-    private static byte[] DetermineKdfSaltInput(string fileFormat, VaultFileParseResult parseResult, string email)
-    {
-        return fileFormat == "EncryptedJSON"
-            ? Encoding.UTF8.GetBytes(parseResult.EmailOrSalt)
-            : Encoding.UTF8.GetBytes(email);
     }
 
     private static void DeriveMasterKey(BitwardenSecrets secrets, byte[] kdfSaltInput)
@@ -96,18 +89,18 @@ public class KeyDerivationService
     private static void DecryptAndSetSymmetricKeys(BitwardenSecrets secrets, string fileFormat)
     {
         bool isForExportValidation = fileFormat == "EncryptedJSON";
-        (byte[]? symKey, byte[]? symEncKey, byte[]? symMacKey, string? error) = ProtectedKeyDecryptor.DecryptSymmetricKey(
+        SymmetricKeyDecryptionResult result = ProtectedKeyDecryptor.DecryptSymmetricKey(
             secrets.ProtectedSymmetricKeyCipherString,
             secrets.StretchedEncryptionKey,
             secrets.StretchedMacKey,
             isForExportValidation);
 
-        HandleSymmetricKeyDecryptionResult(error, symKey);
+        HandleSymmetricKeyDecryptionResult(result.Error, result.FullKey);
 
         // At this point, symKey is guaranteed to be non-null if HandleSymmetricKeyDecryptionResult did not exit.
-        secrets.GeneratedSymmetricKey = symKey!;
-        secrets.GeneratedEncryptionKey = symEncKey ?? [];
-        secrets.GeneratedMacKey = symMacKey ?? [];
+        secrets.GeneratedSymmetricKey = result.FullKey!;
+        secrets.GeneratedEncryptionKey = result.EncKey ?? [];
+        secrets.GeneratedMacKey = result.MacKey ?? [];
     }
 
     private static void HandleSymmetricKeyDecryptionResult(string? error, byte[]? symKey)

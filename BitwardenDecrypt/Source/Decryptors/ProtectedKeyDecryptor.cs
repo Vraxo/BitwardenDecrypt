@@ -1,60 +1,63 @@
 ﻿using BitwardenDecryptor.Crypto;
+using BitwardenDecryptor.Models;
 
 namespace BitwardenDecryptor.Core;
 
 public static class ProtectedKeyDecryptor
 {
-    public static (byte[]? FullKey, byte[]? EncKey, byte[]? MacKey, string? Error) DecryptSymmetricKey(string cipherString, byte[] masterKey, byte[] masterMacKey, bool isExportValidationKey = false)
+    public static SymmetricKeyDecryptionResult DecryptSymmetricKey(string cipherString, byte[] masterKey, byte[] masterMacKey, bool isExportValidationKey = false)
     {
         if (string.IsNullOrEmpty(cipherString))
         {
-            return (null, null, null, "CipherString is empty.");
+            return new SymmetricKeyDecryptionResult(null, null, null, "CipherString is empty.");
         }
 
         string[] parts = cipherString.Split('.');
 
         if (parts.Length < 2)
         {
-            return (null, null, null, "Invalid CipherString format.");
+            return new SymmetricKeyDecryptionResult(null, null, null, "Invalid CipherString format.");
         }
 
         if (!int.TryParse(parts[0], out int encType))
         {
-            return (null, null, null, "Invalid encryption type in CipherString.");
+            return new SymmetricKeyDecryptionResult(null, null, null, "Invalid encryption type in CipherString.");
         }
 
-        (byte[]? cleartextBytes, string? error) = CryptoService.VerifyAndDecryptAesCbc(masterKey, masterMacKey, cipherString);
+        DecryptionResult decryptionResult = CryptoService.VerifyAndDecryptAesCbc(masterKey, masterMacKey, cipherString);
 
-        if (error != null || cleartextBytes == null)
+        if (decryptionResult.Error != null || decryptionResult.Plaintext == null)
         {
-            return (null, null, null, error);
+            return new SymmetricKeyDecryptionResult(null, null, null, decryptionResult.Error);
         }
+
+        byte[] cleartextBytes = decryptionResult.Plaintext;
 
         if (!isExportValidationKey && encType == 2 && cleartextBytes.Length < 64)
         {
-            return (null, null, null, "Decrypted key is too short. Likely wrong password (for data.json user key).");
+            return new SymmetricKeyDecryptionResult(null, null, null, "Decrypted key is too short. Likely wrong password (for data.json user key).");
         }
 
         if ((encType == 2 || encType == 0) && cleartextBytes.Length >= 64)
         {
             byte[] enc = cleartextBytes.Take(32).ToArray();
             byte[] mac = cleartextBytes.Skip(32).Take(32).ToArray();
-            return (cleartextBytes, enc, mac, null);
+            return new SymmetricKeyDecryptionResult(cleartextBytes, enc, mac, null);
         }
 
-        return (cleartextBytes, null, null, null);
+        return new SymmetricKeyDecryptionResult(cleartextBytes, null, null, null);
     }
 
     public static byte[]? DecryptRsaPrivateKeyBytes(string cipherString, byte[] encryptionKey, byte[] macKey)
     {
-        (byte[]? cleartext, string? error) = CryptoService.VerifyAndDecryptAesCbc(encryptionKey, macKey, cipherString);
+        DecryptionResult result = CryptoService.VerifyAndDecryptAesCbc(encryptionKey, macKey, cipherString);
 
-        if (error != null)
+        if (result.Error != null)
         {
-            Console.Error.WriteLine($"ERROR decrypting RSA private key wrapper: {error}");
+            Console.Error.WriteLine($"ERROR decrypting RSA private key wrapper: {result.Error}");
             return null;
         }
 
-        return cleartext;
+        return result.Plaintext;
     }
 }

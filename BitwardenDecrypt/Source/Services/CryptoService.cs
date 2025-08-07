@@ -1,4 +1,5 @@
 ﻿using System.Security.Cryptography;
+using BitwardenDecryptor.Models;
 using Isopoh.Cryptography.Argon2;
 using Isopoh.Cryptography.SecureArray;
 
@@ -68,20 +69,20 @@ public static class CryptoService
         return msPlain.ToArray();
     }
 
-    public static (byte[]? Plaintext, string? Error) VerifyAndDecryptAesCbc(byte[] encryptionKey, byte[] macKey, string cipherString)
+    public static DecryptionResult VerifyAndDecryptAesCbc(byte[] encryptionKey, byte[] macKey, string cipherString)
     {
         string[] parts = cipherString.Split('.');
 
         if (parts.Length < 2)
         {
-            return (null, "Invalid CipherString format (missing type or data).");
+            return new DecryptionResult(null, "Invalid CipherString format (missing type or data).");
         }
 
         string[] dataParts = parts[1].Split('|');
 
         if (dataParts.Length < 3)
         {
-            return (null, "Invalid CipherString format (missing IV, ciphertext, or MAC).");
+            return new DecryptionResult(null, "Invalid CipherString format (missing IV, ciphertext, or MAC).");
         }
 
         byte[] iv;
@@ -96,7 +97,7 @@ public static class CryptoService
         }
         catch (FormatException ex)
         {
-            return (null, $"Base64 decoding failed: {ex.Message}");
+            return new DecryptionResult(null, $"Base64 decoding failed: {ex.Message}");
         }
 
         byte[] dataToMac = [.. iv, .. ciphertext];
@@ -104,17 +105,17 @@ public static class CryptoService
 
         if (!mac.SequenceEqual(calculatedMac))
         {
-            return (null, "MAC mismatch.");
+            return new DecryptionResult(null, "MAC mismatch.");
         }
 
         try
         {
             byte[]? decrypted = DecryptAesCbc(encryptionKey, iv, ciphertext);
-            return (decrypted, null);
+            return new DecryptionResult(decrypted, null);
         }
         catch (CryptographicException ex)
         {
-            return (null, $"Decryption failed (possibly wrong password/key or padding): {ex.Message}");
+            return new DecryptionResult(null, $"Decryption failed (possibly wrong password/key or padding): {ex.Message}");
         }
     }
 

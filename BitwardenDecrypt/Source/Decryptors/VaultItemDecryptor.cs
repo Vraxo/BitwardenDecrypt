@@ -31,16 +31,16 @@ public class VaultItemDecryptor(BitwardenSecrets secrets)
             return $"ERROR Decrypting: Invalid encType {cipherString}";
         }
 
-        (byte[]? cleartextBytes, string? error) = CryptoService.VerifyAndDecryptAesCbc(encryptionKey, macKey, cipherString);
+        DecryptionResult decryptionResult = CryptoService.VerifyAndDecryptAesCbc(encryptionKey, macKey, cipherString);
 
-        if (error != null || cleartextBytes == null)
+        if (decryptionResult.Error != null || decryptionResult.Plaintext == null)
         {
-            return $"ERROR: {error}. CipherString not decrypted: {cipherString}";
+            return $"ERROR: {decryptionResult.Error}. CipherString not decrypted: {cipherString}";
         }
 
         try
         {
-            return Encoding.UTF8.GetString(cleartextBytes);
+            return Encoding.UTF8.GetString(decryptionResult.Plaintext);
         }
         catch (DecoderFallbackException)
         {
@@ -49,11 +49,11 @@ public class VaultItemDecryptor(BitwardenSecrets secrets)
                 return $"ERROR Decrypting (UTF-8 decode failed, fallback keys unavailable): {cipherString}";
             }
 
-            (var fallbackKeyBytes, _, _, var fallbackError) = ProtectedKeyDecryptor.DecryptSymmetricKey(cipherString, secrets.GeneratedEncryptionKey, secrets.GeneratedMacKey);
+            SymmetricKeyDecryptionResult fallbackResult = ProtectedKeyDecryptor.DecryptSymmetricKey(cipherString, secrets.GeneratedEncryptionKey, secrets.GeneratedMacKey);
 
-            if (fallbackError is null && fallbackKeyBytes is not null)
+            if (fallbackResult.Error is null && fallbackResult.FullKey is not null)
             {
-                return BitConverter.ToString(fallbackKeyBytes).Replace("-", "").ToLowerInvariant();
+                return BitConverter.ToString(fallbackResult.FullKey).Replace("-", "").ToLowerInvariant();
             }
 
             return $"ERROR Decrypting (UTF-8 decode failed, fallback also failed): {cipherString}";
@@ -115,18 +115,18 @@ public class VaultItemDecryptor(BitwardenSecrets secrets)
             return sendNode;
         }
 
-        (var sendKeyBytes, _, _, var error) = ProtectedKeyDecryptor.DecryptSymmetricKey(keyCipherString, secrets.GeneratedEncryptionKey, secrets.GeneratedMacKey);
+        SymmetricKeyDecryptionResult sendKeyResult = ProtectedKeyDecryptor.DecryptSymmetricKey(keyCipherString, secrets.GeneratedEncryptionKey, secrets.GeneratedMacKey);
 
-        if (error is not null || sendKeyBytes is null)
+        if (sendKeyResult.Error is not null || sendKeyResult.FullKey is null)
         {
-            Console.Error.WriteLine($"Failed to decrypt Send key: {error}");
-            sendNode["key"] = $"ERROR: Failed to decrypt Send key - {error}";
+            Console.Error.WriteLine($"Failed to decrypt Send key: {sendKeyResult.Error}");
+            sendNode["key"] = $"ERROR: Failed to decrypt Send key - {sendKeyResult.Error}";
             return sendNode;
         }
 
         byte[] salt = Encoding.UTF8.GetBytes("bitwarden-send");
         byte[] info = Encoding.UTF8.GetBytes("send");
-        byte[] derivedSendKeyMaterial = HKDF.DeriveKey(HashAlgorithmName.SHA256, sendKeyBytes, 64, salt, info);
+        byte[] derivedSendKeyMaterial = HKDF.DeriveKey(HashAlgorithmName.SHA256, sendKeyResult.FullKey, 64, salt, info);
 
         byte[] sendEncKey = derivedSendKeyMaterial.Take(32).ToArray();
         byte[] sendMacKey = derivedSendKeyMaterial.Skip(32).Take(32).ToArray();
@@ -182,21 +182,21 @@ public class VaultItemDecryptor(BitwardenSecrets secrets)
 
         if (!string.IsNullOrEmpty(individualItemKeyCipherString))
         {
-            (_, var decryptedItemEncKey, var decryptedItemMacKey, var itemKeyError) = ProtectedKeyDecryptor.DecryptSymmetricKey(individualItemKeyCipherString, itemEncKey, itemMacKey);
+            SymmetricKeyDecryptionResult itemKeyResult = ProtectedKeyDecryptor.DecryptSymmetricKey(individualItemKeyCipherString, itemEncKey, itemMacKey);
 
-            if (itemKeyError is null && decryptedItemEncKey is not null && decryptedItemMacKey is not null)
+            if (itemKeyResult.Error is null && itemKeyResult.EncKey is not null && itemKeyResult.MacKey is not null)
             {
-                itemEncKey = decryptedItemEncKey;
-                itemMacKey = decryptedItemMacKey;
+                itemEncKey = itemKeyResult.EncKey;
+                itemMacKey = itemKeyResult.MacKey;
 
                 if (groupItemNode is JsonObject obj)
                 {
                     obj["key"] = "";
                 }
             }
-            else if (itemKeyError is not null && groupItemNode is JsonObject obj)
+            else if (itemKeyResult.Error is not null && groupItemNode is JsonObject obj)
             {
-                obj["key"] = $"ERROR: Could not decrypt item key. {itemKeyError}";
+                obj["key"] = $"ERROR: Could not decrypt item key. {itemKeyResult.Error}";
             }
         }
 

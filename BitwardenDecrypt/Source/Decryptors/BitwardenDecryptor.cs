@@ -19,17 +19,21 @@ public class BitwardenDecryptor(CommandLineOptions options)
             return null;
         }
 
-        VaultFileParseResult parseResult = VaultFileParser.ParseAndExtractParameters(rootNode, options);
+        VaultMetadata? metadata = VaultFileParser.Parse(rootNode, options.InputFile);
         
-        if (!parseResult.Success)
+        if (metadata is null)
         {
             Environment.Exit(1);
             return null;
         }
 
-        string password = GetPasswordFromUser(parseResult);
+        options.FileFormat = metadata.FileFormat;
+        options.AccountEmail = metadata.AccountEmail ?? string.Empty;
+        options.AccountUuid = metadata.AccountUuid ?? string.Empty;
 
-        BitwardenSecrets secrets = KeyDerivationService.DeriveKeys(parseResult, password, options.FileFormat!);
+        string password = GetPasswordFromUser(metadata);
+
+        BitwardenSecrets secrets = KeyDerivationService.DeriveKeys(metadata, password);
 
         VaultDataDecryptor vaultDataDecryptor = new(secrets, options);
         JsonObject decryptedData = vaultDataDecryptor.DecryptVault(rootNode);
@@ -85,11 +89,11 @@ public class BitwardenDecryptor(CommandLineOptions options)
         }
     }
 
-    private string GetPasswordFromUser(VaultFileParseResult parseResult)
+    private string GetPasswordFromUser(VaultMetadata metadata)
     {
-        string passwordPromptDetail = options.FileFormat == "EncryptedJSON"
-            ? $"Export Password (for salt: {parseResult.EmailOrSalt})"
-            : $"Master Password (for account: {options.AccountEmail})";
+        string passwordPromptDetail = metadata.FileFormat == "EncryptedJSON"
+            ? $"Export Password (for salt: {metadata.KdfSalt})"
+            : $"Master Password (for account: {metadata.AccountEmail})";
 
         return ConsolePasswordReader.ReadPassword($"Enter {passwordPromptDetail}: ");
     }
