@@ -24,24 +24,42 @@ public static class Program
             name: "--output",
             description: "Write decrypted output to file. Will overwrite if file exists.");
 
+        Option<bool> saveOption = new(
+            name: "--save",
+            description: "Save the decrypted output to a file with a default name (e.g., 'data.json' becomes 'data.decrypted.json'). This is ignored if --output is used.");
+        saveOption.AddAlias("-s");
+
         rootCommand.AddArgument(inputFileArgument);
         rootCommand.AddOption(includeSendsOption);
         rootCommand.AddOption(outputFileOption);
+        rootCommand.AddOption(saveOption);
 
-        rootCommand.SetHandler((inputFile, includeSends, outputFile) =>
+        rootCommand.SetHandler((inputFile, includeSends, outputFile, save) =>
         {
+            string? finalOutputFile = outputFile;
+            if (save && string.IsNullOrEmpty(finalOutputFile))
+            {
+                string? directory = Path.GetDirectoryName(inputFile);
+                string filenameWithoutExt = Path.GetFileNameWithoutExtension(inputFile);
+                string newFilename = $"{filenameWithoutExt}.decrypted.json";
+                finalOutputFile = string.IsNullOrEmpty(directory)
+                    ? newFilename
+                    : Path.Combine(directory, newFilename);
+            }
+
             CommandLineOptions options = new()
             {
                 InputFile = inputFile,
                 IncludeSends = includeSends,
-                OutputFile = outputFile
+                OutputFile = finalOutputFile
             };
 
             RunDecryption(options);
-        }, 
+        },
         inputFileArgument,
         includeSendsOption,
-        outputFileOption);
+        outputFileOption,
+        saveOption);
 
         return rootCommand.Invoke(args);
     }
