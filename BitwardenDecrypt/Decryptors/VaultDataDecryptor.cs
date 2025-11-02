@@ -4,7 +4,7 @@ using System.Text.Json.Nodes;
 
 namespace BitwardenDecryptor.Core;
 
-public class VaultDataDecryptor(BitwardenSecrets secrets, CommandLineOptions options)
+public class VaultDataDecryptor(BitwardenSecrets secrets, DecryptionContext context)
 {
     public JsonObject DecryptVault(JsonNode rootNode)
     {
@@ -16,12 +16,12 @@ public class VaultDataDecryptor(BitwardenSecrets secrets, CommandLineOptions opt
     {
         VaultItemDecryptor vaultItemDecryptor = new(secrets);
 
-        return options.FileFormat switch
+        return context.FileFormat switch
         {
             "EncryptedJSON" => new EncryptedJsonDecryptorStrategy(rootNode, secrets, vaultItemDecryptor),
-            "2024" => new Format2024DecryptorStrategy(rootNode, secrets, options, vaultItemDecryptor),
-            "NEW" or "OLD" => new LegacyJsonDecryptorStrategy(rootNode, secrets, options, vaultItemDecryptor),
-            _ => throw new NotSupportedException($"The file format '{options.FileFormat}' is not supported.")
+            "2024" => new Format2024DecryptorStrategy(rootNode, secrets, context, vaultItemDecryptor),
+            "NEW" or "OLD" => new LegacyJsonDecryptorStrategy(rootNode, secrets, context, vaultItemDecryptor),
+            _ => throw new NotSupportedException($"The file format '{context.FileFormat}' is not supported.")
         };
     }
 }

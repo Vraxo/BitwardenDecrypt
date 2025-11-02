@@ -29,15 +29,18 @@ public class BitwardenDecryptor(CommandLineOptions options)
             return null;
         }
 
-        options.FileFormat = metadata.FileFormat;
-        options.AccountEmail = metadata.AccountEmail ?? string.Empty;
-        options.AccountUuid = metadata.AccountUuid ?? string.Empty;
-
         string password = GetPasswordFromUser(metadata);
 
         BitwardenSecrets secrets = KeyDerivationService.DeriveKeys(metadata, password);
 
-        VaultDataDecryptor vaultDataDecryptor = new(secrets, options);
+        DecryptionContext decryptionContext = new(
+            FileFormat: metadata.FileFormat,
+            AccountUuid: metadata.AccountUuid ?? string.Empty,
+            AccountEmail: metadata.AccountEmail ?? string.Empty,
+            IncludeSends: options.IncludeSends
+        );
+
+        VaultDataDecryptor vaultDataDecryptor = new(secrets, decryptionContext);
         JsonObject decryptedData = vaultDataDecryptor.DecryptVault(rootNode);
 
         JsonObject finalOutputObject = StructureOutputJson(decryptedData);

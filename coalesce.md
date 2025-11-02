@@ -8,6 +8,7 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
   </PropertyGroup>
 
   <ItemGroup>
@@ -30,10 +31,6 @@ public class CommandLineOptions
     public string InputFile { get; set; } = "data.json";
     public bool IncludeSends { get; set; } = false;
     public string? OutputFile { get; set; }
-
-    public string AccountUuid { get; set; } = string.Empty;
-    public string AccountEmail { get; set; } = string.Empty;
-    public string FileFormat { get; set; } = string.Empty;
 }
 ```
 
@@ -112,6 +109,14 @@ public static class Program
         outputFileOption,
         saveOption);
 
+        Command installPathCommand = new("install-path", "Adds the application's directory to the PATH environment variable for the current user.");
+        installPathCommand.SetHandler(InstallPath);
+        rootCommand.AddCommand(installPathCommand);
+
+        Command uninstallPathCommand = new("uninstall-path", "Removes the application's directory from the PATH environment variable for the current user.");
+        uninstallPathCommand.SetHandler(UninstallPath);
+        rootCommand.AddCommand(uninstallPathCommand);
+
         return rootCommand.Invoke(args);
     }
 
@@ -152,6 +157,104 @@ public static class Program
         else
         {
             Console.WriteLine(decryptedJson);
+        }
+    }
+
+    private static void InstallPath()
+    {
+        try
+        {
+            string? exePath = Environment.ProcessPath;
+            if (string.IsNullOrEmpty(exePath))
+            {
+                Console.Error.WriteLine("ERROR: Could not determine the application's path.");
+                Environment.ExitCode = 1;
+                return;
+            }
+
+            string? exeDir = Path.GetDirectoryName(exePath);
+            if (string.IsNullOrEmpty(exeDir))
+            {
+                Console.Error.WriteLine("ERROR: Could not determine the application's directory.");
+                Environment.ExitCode = 1;
+                return;
+            }
+
+            Console.WriteLine($"Attempting to add '{exeDir}' to the user PATH variable.");
+
+            string pathVar = Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.User) ?? "";
+            List<string> paths = pathVar.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries).ToList();
+
+            if (paths.Any(p => p.Equals(exeDir, StringComparison.OrdinalIgnoreCase)))
+            {
+                Console.WriteLine("Application directory is already in the user PATH. No changes made.");
+                return;
+            }
+
+            paths.Add(exeDir);
+            string newPath = string.Join(Path.PathSeparator, paths);
+            Environment.SetEnvironmentVariable("PATH", newPath, EnvironmentVariableTarget.User);
+
+            Console.WriteLine("\nSuccessfully added application directory to the user PATH.");
+            Console.WriteLine("You may need to restart your terminal/shell or log out and back in for the changes to take effect.");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine("\nAn unexpected error occurred during installation:");
+            Console.Error.WriteLine($"ERROR: {ex.Message}");
+            Environment.ExitCode = 1;
+        }
+    }
+
+    private static void UninstallPath()
+    {
+        try
+        {
+            string? exePath = Environment.ProcessPath;
+            if (string.IsNullOrEmpty(exePath))
+            {
+                Console.Error.WriteLine("ERROR: Could not determine the application's path.");
+                Environment.ExitCode = 1;
+                return;
+            }
+
+            string? exeDir = Path.GetDirectoryName(exePath);
+            if (string.IsNullOrEmpty(exeDir))
+            {
+                Console.Error.WriteLine("ERROR: Could not determine the application's directory.");
+                Environment.ExitCode = 1;
+                return;
+            }
+
+            Console.WriteLine($"Attempting to remove '{exeDir}' from the user PATH variable.");
+
+            string? pathVar = Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.User);
+            if (string.IsNullOrEmpty(pathVar))
+            {
+                Console.WriteLine("User PATH is empty or not set. No changes needed.");
+                return;
+            }
+
+            List<string> paths = pathVar.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries).ToList();
+            int removedCount = paths.RemoveAll(p => p.Equals(exeDir, StringComparison.OrdinalIgnoreCase));
+
+            if (removedCount > 0)
+            {
+                string newPath = string.Join(Path.PathSeparator, paths);
+                Environment.SetEnvironmentVariable("PATH", newPath, EnvironmentVariableTarget.User);
+                Console.WriteLine("\nSuccessfully removed application directory from the user PATH.");
+                Console.WriteLine("You may need to restart your terminal/shell or log out and back in for the changes to take effect.");
+            }
+            else
+            {
+                Console.WriteLine("Application directory was not found in the user PATH. No changes made.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine("\nAn unexpected error occurred during uninstallation:");
+            Console.Error.WriteLine($"ERROR: {ex.Message}");
+            Environment.ExitCode = 1;
         }
     }
 }
@@ -239,15 +342,18 @@ public class BitwardenDecryptor(CommandLineOptions options)
             return null;
         }
 
-        options.FileFormat = metadata.FileFormat;
-        options.AccountEmail = metadata.AccountEmail ?? string.Empty;
-        options.AccountUuid = metadata.AccountUuid ?? string.Empty;
-
         string password = GetPasswordFromUser(metadata);
 
         BitwardenSecrets secrets = KeyDerivationService.DeriveKeys(metadata, password);
 
-        VaultDataDecryptor vaultDataDecryptor = new(secrets, options);
+        DecryptionContext decryptionContext = new(
+            FileFormat: metadata.FileFormat,
+            AccountUuid: metadata.AccountUuid ?? string.Empty,
+            AccountEmail: metadata.AccountEmail ?? string.Empty,
+            IncludeSends: options.IncludeSends
+        );
+
+        VaultDataDecryptor vaultDataDecryptor = new(secrets, decryptionContext);
         JsonObject decryptedData = vaultDataDecryptor.DecryptVault(rootNode);
 
         JsonObject finalOutputObject = StructureOutputJson(decryptedData);
@@ -434,7 +540,7 @@ using System.Text.Json.Nodes;
 
 namespace BitwardenDecryptor.Core;
 
-public class VaultDataDecryptor(BitwardenSecrets secrets, CommandLineOptions options)
+public class VaultDataDecryptor(BitwardenSecrets secrets, DecryptionContext context)
 {
     public JsonObject DecryptVault(JsonNode rootNode)
     {
@@ -446,12 +552,12 @@ public class VaultDataDecryptor(BitwardenSecrets secrets, CommandLineOptions opt
     {
         VaultItemDecryptor vaultItemDecryptor = new(secrets);
 
-        return options.FileFormat switch
+        return context.FileFormat switch
         {
             "EncryptedJSON" => new EncryptedJsonDecryptorStrategy(rootNode, secrets, vaultItemDecryptor),
-            "2024" => new Format2024DecryptorStrategy(rootNode, secrets, options, vaultItemDecryptor),
-            "NEW" or "OLD" => new LegacyJsonDecryptorStrategy(rootNode, secrets, options, vaultItemDecryptor),
-            _ => throw new NotSupportedException($"The file format '{options.FileFormat}' is not supported.")
+            "2024" => new Format2024DecryptorStrategy(rootNode, secrets, context, vaultItemDecryptor),
+            "NEW" or "OLD" => new LegacyJsonDecryptorStrategy(rootNode, secrets, context, vaultItemDecryptor),
+            _ => throw new NotSupportedException($"The file format '{context.FileFormat}' is not supported.")
         };
     }
 }
@@ -767,6 +873,21 @@ public class BitwardenSecrets
 
     public Dictionary<string, byte[]> OrganizationKeys { get; } = [];
 }
+```
+
+---
+
+### `BitwardenDecrypt\Models\DecryptionContext.cs`
+
+```csharp
+namespace BitwardenDecryptor.Models;
+
+public record DecryptionContext(
+    string FileFormat,
+    string AccountUuid,
+    string AccountEmail,
+    bool IncludeSends
+);
 ```
 
 ---
@@ -1342,7 +1463,7 @@ namespace BitwardenDecryptor.Core.VaultStrategies;
 public class Format2024DecryptorStrategy(
     JsonNode rootNode,
     BitwardenSecrets secrets,
-    CommandLineOptions options,
+    DecryptionContext context,
     VaultItemDecryptor vaultItemDecryptor) : IVaultDecryptorStrategy
 {
     public JsonObject Decrypt()
@@ -1355,7 +1476,7 @@ public class Format2024DecryptorStrategy(
 
         foreach (string groupKey in groupsToProcess)
         {
-            JsonObject? groupDataNode = rootNode[$"user_{options.AccountUuid}_{groupKey}"]?.AsObject();
+            JsonObject? groupDataNode = rootNode[$"user_{context.AccountUuid}_{groupKey}"]?.AsObject();
             if (groupDataNode == null)
             {
                 continue;
@@ -1383,7 +1504,7 @@ public class Format2024DecryptorStrategy(
             decryptedEntries[outputKey] = itemsArray;
         }
 
-        if (options.IncludeSends)
+        if (context.IncludeSends)
         {
             ProcessSends(decryptedEntries);
         }
@@ -1393,7 +1514,7 @@ public class Format2024DecryptorStrategy(
 
     private void DecryptAndStoreOrganizationKeys()
     {
-        if (rootNode[$"user_{options.AccountUuid}_crypto_organizationKeys"] is not JsonObject orgKeysNode || secrets.RsaPrivateKeyDer is null)
+        if (rootNode[$"user_{context.AccountUuid}_crypto_organizationKeys"] is not JsonObject orgKeysNode || secrets.RsaPrivateKeyDer is null)
         {
             return;
         }
@@ -1416,7 +1537,7 @@ public class Format2024DecryptorStrategy(
 
     private void ProcessSends(JsonObject decryptedEntries)
     {
-        if (rootNode[$"user_{options.AccountUuid}_encryptedSend_sendUserEncrypted"] is not JsonObject sendsDataNode)
+        if (rootNode[$"user_{context.AccountUuid}_encryptedSend_sendUserEncrypted"] is not JsonObject sendsDataNode)
         {
             return;
         }
@@ -1462,15 +1583,15 @@ namespace BitwardenDecryptor.Core.VaultStrategies;
 public class LegacyJsonDecryptorStrategy(
     JsonNode rootNode,
     BitwardenSecrets secrets,
-    CommandLineOptions options,
+    DecryptionContext context,
     VaultItemDecryptor vaultItemDecryptor) : IVaultDecryptorStrategy
 {
     public JsonObject Decrypt()
     {
         JsonNode accountNode;
-        if (options.FileFormat == "NEW")
+        if (context.FileFormat == "NEW")
         {
-            accountNode = rootNode[options.AccountUuid!]!;
+            accountNode = rootNode[context.AccountUuid!]!;
             DecryptAndStoreOrganizationKeys(accountNode["keys"]?["organizationKeys"]?["encrypted"]?.AsObject());
         }
         else // OLD format
@@ -1479,7 +1600,7 @@ public class LegacyJsonDecryptorStrategy(
             DecryptAndStoreOrganizationKeys(accountNode["encOrgKeys"]?.AsObject());
         }
 
-        if ((options.FileFormat == "NEW" ? accountNode["data"] : accountNode) is not JsonObject dataContainerNode)
+        if ((context.FileFormat == "NEW" ? accountNode["data"] : accountNode) is not JsonObject dataContainerNode)
         {
             Console.Error.WriteLine("ERROR: Data container not found in JSON.");
             Environment.Exit(1);
@@ -1493,7 +1614,7 @@ public class LegacyJsonDecryptorStrategy(
             string outputKey = groupKeyOriginal.Contains('_') ? groupKeyOriginal[..groupKeyOriginal.IndexOf('_')] : groupKeyOriginal;
             outputKey = outputKey.Replace("ciphers", "items");
 
-            if ((groupKeyOriginal == "sends" || (outputKey == "sends" && groupKeyOriginal.StartsWith("sends_"))) && !options.IncludeSends)
+            if ((groupKeyOriginal == "sends" || (outputKey == "sends" && groupKeyOriginal.StartsWith("sends_"))) && !context.IncludeSends)
             {
                 continue;
             }
@@ -1505,7 +1626,7 @@ public class LegacyJsonDecryptorStrategy(
             }
 
             JsonNode? actualDataNode = groupKvp.Value;
-            if (options.FileFormat == "NEW" && outputKey != "organizations" && outputKey != "sends" && groupKvp.Value?["encrypted"] is not null)
+            if (context.FileFormat == "NEW" && outputKey != "organizations" && outputKey != "sends" && groupKvp.Value?["encrypted"] is not null)
             {
                 actualDataNode = groupKvp.Value["encrypted"];
             }

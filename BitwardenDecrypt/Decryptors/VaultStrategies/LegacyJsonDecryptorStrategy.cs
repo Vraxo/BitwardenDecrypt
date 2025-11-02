@@ -6,15 +6,15 @@ namespace BitwardenDecryptor.Core.VaultStrategies;
 public class LegacyJsonDecryptorStrategy(
     JsonNode rootNode,
     BitwardenSecrets secrets,
-    CommandLineOptions options,
+    DecryptionContext context,
     VaultItemDecryptor vaultItemDecryptor) : IVaultDecryptorStrategy
 {
     public JsonObject Decrypt()
     {
         JsonNode accountNode;
-        if (options.FileFormat == "NEW")
+        if (context.FileFormat == "NEW")
         {
-            accountNode = rootNode[options.AccountUuid!]!;
+            accountNode = rootNode[context.AccountUuid!]!;
             DecryptAndStoreOrganizationKeys(accountNode["keys"]?["organizationKeys"]?["encrypted"]?.AsObject());
         }
         else // OLD format
@@ -23,7 +23,7 @@ public class LegacyJsonDecryptorStrategy(
             DecryptAndStoreOrganizationKeys(accountNode["encOrgKeys"]?.AsObject());
         }
 
-        if ((options.FileFormat == "NEW" ? accountNode["data"] : accountNode) is not JsonObject dataContainerNode)
+        if ((context.FileFormat == "NEW" ? accountNode["data"] : accountNode) is not JsonObject dataContainerNode)
         {
             Console.Error.WriteLine("ERROR: Data container not found in JSON.");
             Environment.Exit(1);
@@ -37,7 +37,7 @@ public class LegacyJsonDecryptorStrategy(
             string outputKey = groupKeyOriginal.Contains('_') ? groupKeyOriginal[..groupKeyOriginal.IndexOf('_')] : groupKeyOriginal;
             outputKey = outputKey.Replace("ciphers", "items");
 
-            if ((groupKeyOriginal == "sends" || (outputKey == "sends" && groupKeyOriginal.StartsWith("sends_"))) && !options.IncludeSends)
+            if ((groupKeyOriginal == "sends" || (outputKey == "sends" && groupKeyOriginal.StartsWith("sends_"))) && !context.IncludeSends)
             {
                 continue;
             }
@@ -49,7 +49,7 @@ public class LegacyJsonDecryptorStrategy(
             }
 
             JsonNode? actualDataNode = groupKvp.Value;
-            if (options.FileFormat == "NEW" && outputKey != "organizations" && outputKey != "sends" && groupKvp.Value?["encrypted"] is not null)
+            if (context.FileFormat == "NEW" && outputKey != "organizations" && outputKey != "sends" && groupKvp.Value?["encrypted"] is not null)
             {
                 actualDataNode = groupKvp.Value["encrypted"];
             }

@@ -6,7 +6,7 @@ namespace BitwardenDecryptor.Core.VaultStrategies;
 public class Format2024DecryptorStrategy(
     JsonNode rootNode,
     BitwardenSecrets secrets,
-    CommandLineOptions options,
+    DecryptionContext context,
     VaultItemDecryptor vaultItemDecryptor) : IVaultDecryptorStrategy
 {
     public JsonObject Decrypt()
@@ -19,7 +19,7 @@ public class Format2024DecryptorStrategy(
 
         foreach (string groupKey in groupsToProcess)
         {
-            JsonObject? groupDataNode = rootNode[$"user_{options.AccountUuid}_{groupKey}"]?.AsObject();
+            JsonObject? groupDataNode = rootNode[$"user_{context.AccountUuid}_{groupKey}"]?.AsObject();
             if (groupDataNode == null)
             {
                 continue;
@@ -47,7 +47,7 @@ public class Format2024DecryptorStrategy(
             decryptedEntries[outputKey] = itemsArray;
         }
 
-        if (options.IncludeSends)
+        if (context.IncludeSends)
         {
             ProcessSends(decryptedEntries);
         }
@@ -57,7 +57,7 @@ public class Format2024DecryptorStrategy(
 
     private void DecryptAndStoreOrganizationKeys()
     {
-        if (rootNode[$"user_{options.AccountUuid}_crypto_organizationKeys"] is not JsonObject orgKeysNode || secrets.RsaPrivateKeyDer is null)
+        if (rootNode[$"user_{context.AccountUuid}_crypto_organizationKeys"] is not JsonObject orgKeysNode || secrets.RsaPrivateKeyDer is null)
         {
             return;
         }
@@ -80,7 +80,7 @@ public class Format2024DecryptorStrategy(
 
     private void ProcessSends(JsonObject decryptedEntries)
     {
-        if (rootNode[$"user_{options.AccountUuid}_encryptedSend_sendUserEncrypted"] is not JsonObject sendsDataNode)
+        if (rootNode[$"user_{context.AccountUuid}_encryptedSend_sendUserEncrypted"] is not JsonObject sendsDataNode)
         {
             return;
         }
