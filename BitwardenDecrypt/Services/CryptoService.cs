@@ -140,18 +140,16 @@ public static class CryptoService
                 {
                     rsa.ImportRSAPrivateKey(privateKeyDer, out _);
                 }
-                catch (CryptographicException ex)
+                catch (CryptographicException)
                 {
-                    Console.Error.WriteLine($"Failed to import RSA private key (DER): {ex.Message}");
                     return null;
                 }
             }
 
             return rsa.Decrypt(ciphertext, RSAEncryptionPadding.OaepSHA1);
         }
-        catch (CryptographicException ex)
+        catch (CryptographicException)
         {
-            Console.Error.WriteLine($"RSA decryption failed: {ex.Message}");
             return null;
         }
     }

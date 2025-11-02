@@ -1,3 +1,4 @@
+using BitwardenDecryptor.Exceptions;
 using BitwardenDecryptor.Models;
 using System.Text.Json.Nodes;
 
@@ -25,9 +26,7 @@ public class LegacyJsonDecryptorStrategy(
 
         if ((context.FileFormat == "NEW" ? accountNode["data"] : accountNode) is not JsonObject dataContainerNode)
         {
-            Console.Error.WriteLine("ERROR: Data container not found in JSON.");
-            Environment.Exit(1);
-            return [];
+            throw new VaultFormatException("Data container not found in the vault JSON.");
         }
 
         JsonObject decryptedEntries = [];

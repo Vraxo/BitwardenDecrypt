@@ -9,33 +9,33 @@ public static class ProtectedKeyDecryptor
     {
         if (string.IsNullOrEmpty(cipherString))
         {
-            return new SymmetricKeyDecryptionResult(null, null, null, "CipherString is empty.");
+            return new(null, null, null, "CipherString is empty.");
         }
 
         string[] parts = cipherString.Split('.');
 
         if (parts.Length < 2)
         {
-            return new SymmetricKeyDecryptionResult(null, null, null, "Invalid CipherString format.");
+            return new(null, null, null, "Invalid CipherString format.");
         }
 
         if (!int.TryParse(parts[0], out int encType))
         {
-            return new SymmetricKeyDecryptionResult(null, null, null, "Invalid encryption type in CipherString.");
+            return new(null, null, null, "Invalid encryption type in CipherString.");
         }
 
         DecryptionResult decryptionResult = CryptoService.VerifyAndDecryptAesCbc(masterKey, masterMacKey, cipherString);
 
         if (decryptionResult.Error != null || decryptionResult.Plaintext == null)
         {
-            return new SymmetricKeyDecryptionResult(null, null, null, decryptionResult.Error);
+            return new(null, null, null, decryptionResult.Error);
         }
 
         byte[] cleartextBytes = decryptionResult.Plaintext;
 
         if (!isExportValidationKey && encType == 2 && cleartextBytes.Length < 64)
         {
-            return new SymmetricKeyDecryptionResult(null, null, null, "Decrypted key is too short. Likely wrong password (for data.json user key).");
+            return new(null, null, null, "Decrypted key is too short. Likely wrong password (for data.json user key).");
         }
 
         if ((encType == 2 || encType == 0) && cleartextBytes.Length >= 64)
@@ -45,7 +45,7 @@ public static class ProtectedKeyDecryptor
             return new SymmetricKeyDecryptionResult(cleartextBytes, enc, mac, null);
         }
 
-        return new SymmetricKeyDecryptionResult(cleartextBytes, null, null, null);
+        return new(cleartextBytes, null, null, null);
     }
 
     public static byte[]? DecryptRsaPrivateKeyBytes(string cipherString, byte[] encryptionKey, byte[] macKey)
@@ -54,7 +54,6 @@ public static class ProtectedKeyDecryptor
 
         if (result.Error != null)
         {
-            Console.Error.WriteLine($"ERROR decrypting RSA private key wrapper: {result.Error}");
             return null;
         }
 
