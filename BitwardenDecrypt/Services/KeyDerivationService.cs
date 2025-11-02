@@ -5,17 +5,26 @@ using System.Text;
 
 namespace BitwardenDecryptor.Core;
 
-public class KeyDerivationService(VaultMetadata metadata)
+public class KeyDerivationService
 {
+    private readonly VaultMetadata _metadata;
+    private readonly IProtectedKeyDecryptor _protectedKeyDecryptor;
+
+    public KeyDerivationService(VaultMetadata metadata, IProtectedKeyDecryptor protectedKeyDecryptor)
+    {
+        _metadata = metadata;
+        _protectedKeyDecryptor = protectedKeyDecryptor;
+    }
+
     public BitwardenSecrets DeriveKeys(string password)
     {
-        BitwardenSecrets secrets = InitializeSecrets(metadata, password);
-        byte[] kdfSaltInput = Encoding.UTF8.GetBytes(metadata.KdfSalt);
+        BitwardenSecrets secrets = InitializeSecrets(_metadata, password);
+        byte[] kdfSaltInput = Encoding.UTF8.GetBytes(_metadata.KdfSalt);
 
         DeriveMasterKey(secrets, kdfSaltInput);
         DeriveMasterPasswordHash(secrets);
         DeriveStretchedKeys(secrets);
-        DecryptAndSetSymmetricKeys(secrets, metadata.FileFormat);
+        DecryptAndSetSymmetricKeys(secrets, _metadata.FileFormat);
         DecryptAndSetRsaPrivateKey(secrets);
 
         return secrets;
@@ -89,7 +98,7 @@ public class KeyDerivationService(VaultMetadata metadata)
     private void DecryptAndSetSymmetricKeys(BitwardenSecrets secrets, string fileFormat)
     {
         bool isForExportValidation = fileFormat == "EncryptedJSON";
-        SymmetricKeyDecryptionResult result = ProtectedKeyDecryptor.DecryptSymmetricKey(
+        SymmetricKeyDecryptionResult result = _protectedKeyDecryptor.DecryptSymmetricKey(
             secrets.ProtectedSymmetricKeyCipherString,
             secrets.StretchedEncryptionKey,
             secrets.StretchedMacKey,
@@ -140,7 +149,7 @@ public class KeyDerivationService(VaultMetadata metadata)
             throw new KeyDerivationException("Cannot decrypt RSA private key because dependent symmetric keys were not properly derived.");
         }
 
-        secrets.RsaPrivateKeyDer = ProtectedKeyDecryptor.DecryptRsaPrivateKeyBytes(
+        secrets.RsaPrivateKeyDer = _protectedKeyDecryptor.DecryptRsaPrivateKeyBytes(
             secrets.ProtectedRsaPrivateKeyCipherString,
             secrets.GeneratedEncryptionKey,
             secrets.GeneratedMacKey);

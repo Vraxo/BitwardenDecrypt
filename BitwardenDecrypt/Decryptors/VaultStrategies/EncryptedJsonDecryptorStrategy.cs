@@ -35,7 +35,7 @@ public class EncryptedJsonDecryptorStrategy : IVaultDecryptorStrategy
 
         JsonObject payloadNode = JsonNode.Parse(decryptedJsonPayload)!.AsObject();
         JsonObject decryptedEntries = [];
-       
+
         foreach (KeyValuePair<string, JsonNode?> prop in payloadNode)
         {
             decryptedEntries[prop.Key] = prop.Value?.DeepClone();

@@ -4,8 +4,19 @@ using System.Text.Json.Nodes;
 
 namespace BitwardenDecryptor.Core;
 
-public class VaultDataDecryptor(BitwardenSecrets secrets, DecryptionContext context)
+public class VaultDataDecryptor
 {
+    private readonly BitwardenSecrets _secrets;
+    private readonly DecryptionContext _context;
+    private readonly IProtectedKeyDecryptor _protectedKeyDecryptor;
+
+    public VaultDataDecryptor(BitwardenSecrets secrets, DecryptionContext context, IProtectedKeyDecryptor protectedKeyDecryptor)
+    {
+        _secrets = secrets;
+        _context = context;
+        _protectedKeyDecryptor = protectedKeyDecryptor;
+    }
+
     public JsonObject DecryptVault(JsonNode rootNode)
     {
         IVaultDecryptorStrategy strategy = CreateStrategy(rootNode);
@@ -14,14 +25,14 @@ public class VaultDataDecryptor(BitwardenSecrets secrets, DecryptionContext cont
 
     private IVaultDecryptorStrategy CreateStrategy(JsonNode rootNode)
     {
-        VaultItemDecryptor vaultItemDecryptor = new(secrets);
+        VaultItemDecryptor vaultItemDecryptor = new(_secrets, _protectedKeyDecryptor);
 
-        return context.FileFormat switch
+        return _context.FileFormat switch
         {
-            "EncryptedJSON" => new EncryptedJsonDecryptorStrategy(rootNode, secrets, vaultItemDecryptor),
-            "2024" => new Format2024DecryptorStrategy(rootNode, secrets, context, vaultItemDecryptor),
-            "NEW" or "OLD" => new LegacyJsonDecryptorStrategy(rootNode, secrets, context, vaultItemDecryptor),
-            _ => throw new NotSupportedException($"The file format '{context.FileFormat}' is not supported.")
+            "EncryptedJSON" => new EncryptedJsonDecryptorStrategy(rootNode, _secrets, vaultItemDecryptor),
+            "2024" => new Format2024DecryptorStrategy(rootNode, _secrets, _context, vaultItemDecryptor),
+            "NEW" or "OLD" => new LegacyJsonDecryptorStrategy(rootNode, _secrets, _context, vaultItemDecryptor),
+            _ => throw new NotSupportedException($"The file format '{_context.FileFormat}' is not supported.")
         };
     }
 }

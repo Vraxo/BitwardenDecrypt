@@ -8,10 +8,12 @@ namespace BitwardenDecryptor.Core;
 public class GenericJsonDecryptor
 {
     private readonly BitwardenSecrets _secrets;
+    private readonly IProtectedKeyDecryptor _protectedKeyDecryptor;
 
-    public GenericJsonDecryptor(BitwardenSecrets secrets)
+    public GenericJsonDecryptor(BitwardenSecrets secrets, IProtectedKeyDecryptor protectedKeyDecryptor)
     {
         _secrets = secrets;
+        _protectedKeyDecryptor = protectedKeyDecryptor;
     }
 
     public string DecryptCipherString(string cipherString, byte[] encryptionKey, byte[] macKey)
@@ -27,12 +29,9 @@ public class GenericJsonDecryptor
         }
 
         DecryptionResult decryptionResult = CryptoService.VerifyAndDecryptAesCbc(encryptionKey, macKey, cipherString);
-        if (decryptionResult.Error != null || decryptionResult.Plaintext == null)
-        {
-            return $"ERROR: {decryptionResult.Error}. CipherString not decrypted: {cipherString}";
-        }
-
-        return ProcessDecryptedPlaintext(decryptionResult.Plaintext, cipherString);
+        return decryptionResult.Error != null || decryptionResult.Plaintext == null
+            ? $"ERROR: {decryptionResult.Error}. CipherString not decrypted: {cipherString}"
+            : ProcessDecryptedPlaintext(decryptionResult.Plaintext, cipherString);
     }
 
     public JsonNode? DecryptAllCiphersInNode(JsonNode? node, byte[] encKey, byte[] macKey)
@@ -41,18 +40,18 @@ public class GenericJsonDecryptor
         {
             case null:
                 return null;
-            case JsonValue val when val.TryGetValue<string>(out var strValue) && IsPotentiallyCipherString(strValue):
+            case JsonValue val when val.TryGetValue<string>(out string? strValue) && IsPotentiallyCipherString(strValue):
                 return JsonValue.Create(DecryptCipherString(strValue, encKey, macKey));
             case JsonObject obj:
-                var newObj = new JsonObject();
-                foreach (var prop in obj)
+                JsonObject newObj = [];
+                foreach (KeyValuePair<string, JsonNode?> prop in obj)
                 {
                     newObj[prop.Key] = DecryptAllCiphersInNode(prop.Value, encKey, macKey);
                 }
                 return newObj;
             case JsonArray arr:
-                var newArr = new JsonArray();
-                foreach (var item in arr)
+                JsonArray newArr = [];
+                foreach (JsonNode? item in arr)
                 {
                     newArr.Add(DecryptAllCiphersInNode(item, encKey, macKey));
                 }
@@ -81,7 +80,7 @@ public class GenericJsonDecryptor
             return $"ERROR Decrypting (UTF-8 decode failed, fallback keys unavailable): {cipherString}";
         }
 
-        SymmetricKeyDecryptionResult fallbackResult = ProtectedKeyDecryptor.DecryptSymmetricKey(cipherString, _secrets.GeneratedEncryptionKey, _secrets.GeneratedMacKey);
+        SymmetricKeyDecryptionResult fallbackResult = _protectedKeyDecryptor.DecryptSymmetricKey(cipherString, _secrets.GeneratedEncryptionKey, _secrets.GeneratedMacKey);
 
         return fallbackResult.Error is null && fallbackResult.FullKey is not null
             ? BitConverter.ToString(fallbackResult.FullKey).Replace("-", "").ToLowerInvariant()

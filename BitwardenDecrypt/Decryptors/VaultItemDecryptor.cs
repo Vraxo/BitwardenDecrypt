@@ -10,11 +10,13 @@ public class VaultItemDecryptor
 {
     private readonly BitwardenSecrets _secrets;
     private readonly GenericJsonDecryptor _genericDecryptor;
+    private readonly IProtectedKeyDecryptor _protectedKeyDecryptor;
 
-    public VaultItemDecryptor(BitwardenSecrets secrets)
+    public VaultItemDecryptor(BitwardenSecrets secrets, IProtectedKeyDecryptor protectedKeyDecryptor)
     {
         _secrets = secrets;
-        _genericDecryptor = new GenericJsonDecryptor(secrets);
+        _protectedKeyDecryptor = protectedKeyDecryptor;
+        _genericDecryptor = new GenericJsonDecryptor(secrets, protectedKeyDecryptor);
     }
 
     public string DecryptCipherString(string cipherString, byte[] encryptionKey, byte[] macKey)
@@ -48,7 +50,7 @@ public class VaultItemDecryptor
             return sendNode;
         }
 
-        var derivedKeys = DecryptAndDeriveSendKeys(keyCipherString);
+        (byte[] encKey, byte[] macKey, byte[] fullKey)? derivedKeys = DecryptAndDeriveSendKeys(keyCipherString);
         if (derivedKeys is null)
         {
             sendNode["key"] = "ERROR: Failed to decrypt or derive Send key.";
@@ -105,7 +107,7 @@ public class VaultItemDecryptor
             return null;
         }
 
-        SymmetricKeyDecryptionResult sendKeyResult = ProtectedKeyDecryptor.DecryptSymmetricKey(keyCipherString, _secrets.GeneratedEncryptionKey, _secrets.GeneratedMacKey);
+        SymmetricKeyDecryptionResult sendKeyResult = _protectedKeyDecryptor.DecryptSymmetricKey(keyCipherString, _secrets.GeneratedEncryptionKey, _secrets.GeneratedMacKey);
 
         if (sendKeyResult.Error is not null || sendKeyResult.FullKey is null)
         {
@@ -134,7 +136,7 @@ public class VaultItemDecryptor
             return (baseEncKey, baseMacKey);
         }
 
-        SymmetricKeyDecryptionResult itemKeyResult = ProtectedKeyDecryptor.DecryptSymmetricKey(individualItemKeyCipherString, baseEncKey, baseMacKey);
+        SymmetricKeyDecryptionResult itemKeyResult = _protectedKeyDecryptor.DecryptSymmetricKey(individualItemKeyCipherString, baseEncKey, baseMacKey);
 
         if (itemKeyResult.Error is null && itemKeyResult.EncKey is not null && itemKeyResult.MacKey is not null)
         {

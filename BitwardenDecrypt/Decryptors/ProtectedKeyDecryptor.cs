@@ -3,9 +3,9 @@ using BitwardenDecryptor.Models;
 
 namespace BitwardenDecryptor.Core;
 
-public static class ProtectedKeyDecryptor
+public class ProtectedKeyDecryptor : IProtectedKeyDecryptor
 {
-    public static SymmetricKeyDecryptionResult DecryptSymmetricKey(string cipherString, byte[] masterKey, byte[] masterMacKey, bool isExportValidationKey = false)
+    public SymmetricKeyDecryptionResult DecryptSymmetricKey(string cipherString, byte[] masterKey, byte[] masterMacKey, bool isExportValidationKey = false)
     {
         if (string.IsNullOrEmpty(cipherString))
         {
@@ -21,12 +21,9 @@ public static class ProtectedKeyDecryptor
 
         DecryptionResult decryptionResult = CryptoService.VerifyAndDecryptAesCbc(masterKey, masterMacKey, cipherString);
 
-        if (decryptionResult.Error != null || decryptionResult.Plaintext == null)
-        {
-            return new(null, null, null, decryptionResult.Error);
-        }
-
-        return ProcessDecryptedKey(decryptionResult.Plaintext, encryptionType, isExportValidationKey);
+        return decryptionResult.Error != null || decryptionResult.Plaintext == null
+            ? new(null, null, null, decryptionResult.Error)
+            : ProcessDecryptedKey(decryptionResult.Plaintext, encryptionType, isExportValidationKey);
     }
 
     private static (int EncryptionType, string? Error) ParseCipherStringHeader(string cipherString)
@@ -57,7 +54,7 @@ public static class ProtectedKeyDecryptor
                 "Decrypted key is too short. Likely wrong password (for data.json user key).");
         }
 
-        bool isCompositeKeyType = (encType == 2 || encType == 0);
+        bool isCompositeKeyType = encType is 2 or 0;
 
         if (!isCompositeKeyType || cleartextBytes.Length < 64)
         {
@@ -70,15 +67,10 @@ public static class ProtectedKeyDecryptor
         return new(cleartextBytes, enc, mac, null);
     }
 
-    public static byte[]? DecryptRsaPrivateKeyBytes(string cipherString, byte[] encryptionKey, byte[] macKey)
+    public byte[]? DecryptRsaPrivateKeyBytes(string cipherString, byte[] encryptionKey, byte[] macKey)
     {
         DecryptionResult result = CryptoService.VerifyAndDecryptAesCbc(encryptionKey, macKey, cipherString);
 
-        if (result.Error != null)
-        {
-            return null;
-        }
-
-        return result.Plaintext;
+        return result.Error != null ? null : result.Plaintext;
     }
 }
