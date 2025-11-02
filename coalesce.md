@@ -55,22 +55,28 @@ public static class Program
 {
     public static int Main(string[] args)
     {
-        RootCommand rootCommand = new("Decrypts an encrypted Bitwarden data.json file.");
+        var rootCommand = BuildCommandLine();
+        return rootCommand.Invoke(args);
+    }
 
-        Argument<string> inputFileArgument = new(
+    private static RootCommand BuildCommandLine()
+    {
+        var rootCommand = new RootCommand("Decrypts an encrypted Bitwarden data.json file.");
+
+        var inputFileArgument = new Argument<string>(
             name: "inputfile",
             description: "Path to the Bitwarden data.json file.",
             getDefaultValue: () => "data.json");
 
-        Option<bool> includeSendsOption = new(
+        var includeSendsOption = new Option<bool>(
             name: "--includesends",
             description: "Include Sends in the output.");
 
-        Option<string?> outputFileOption = new(
+        var outputFileOption = new Option<string?>(
             name: "--output",
             description: "Write decrypted output to file. Will overwrite if file exists.");
 
-        Option<bool> saveOption = new(
+        var saveOption = new Option<bool>(
             name: "--save",
             description: "Save the decrypted output to a file with a default name (e.g., 'data.json' becomes 'data.decrypted.json'). This is ignored if --output is used.");
         saveOption.AddAlias("-s");
@@ -80,67 +86,61 @@ public static class Program
         rootCommand.AddOption(outputFileOption);
         rootCommand.AddOption(saveOption);
 
-        rootCommand.SetHandler((inputFile, includeSends, outputFile, save) =>
+        rootCommand.SetHandler(HandleDecryption,
+            inputFileArgument, includeSendsOption, outputFileOption, saveOption);
+
+        var installPathCommand = new Command("install-path", "Adds the application's directory to the PATH environment variable for the current user.");
+        installPathCommand.SetHandler(HandleInstallPath);
+        rootCommand.AddCommand(installPathCommand);
+
+        var uninstallPathCommand = new Command("uninstall-path", "Removes the application's directory from the PATH environment variable for the current user.");
+        uninstallPathCommand.SetHandler(HandleUninstallPath);
+        rootCommand.AddCommand(uninstallPathCommand);
+
+        return rootCommand;
+    }
+
+    private static void HandleDecryption(string inputFile, bool includeSends, string? outputFile, bool save)
+    {
+        try
         {
-            try
-            {
-                string? finalOutputFile = DetermineOutputFile(inputFile, outputFile, save);
-                RunDecryption(inputFile, includeSends, finalOutputFile);
-            }
-            catch (FileNotFoundException)
-            {
-                Console.Error.WriteLine($"\nERROR: The input file '{inputFile}' was not found.");
+            string? finalOutputFile = DetermineOutputFile(inputFile, outputFile, save);
+            RunDecryption(inputFile, includeSends, finalOutputFile);
+        }
+        catch (Exception ex)
+        {
+            HandleException(ex, inputFile);
+            Environment.ExitCode = 1;
+        }
+    }
+
+    private static void HandleException(Exception ex, string? inputFile = null)
+    {
+        Console.Error.WriteLine();
+        switch (ex)
+        {
+            case FileNotFoundException:
+                Console.Error.WriteLine($"ERROR: The input file '{inputFile}' was not found.");
                 Console.Error.WriteLine("\nPlease check the following:");
                 Console.Error.WriteLine($"  1. The file '{inputFile}' actually exists in the current directory.");
                 Console.Error.WriteLine("  2. You have spelled the filename correctly.");
                 Console.Error.WriteLine("  3. If the file is in a different directory, provide the full path to it.");
                 Console.Error.WriteLine("     Example: bitwardendecrypt \"C:\\Users\\YourUser\\Downloads\\data.json\"");
-                Environment.ExitCode = 1;
-            }
-            catch (JsonException ex)
-            {
-                Console.Error.WriteLine($"\nERROR: The file '{inputFile}' could not be read because it is not valid JSON.");
+                break;
+            case JsonException:
+                Console.Error.WriteLine($"ERROR: The file '{inputFile}' could not be read because it is not valid JSON.");
                 Console.Error.WriteLine("Please ensure it is a proper, unmodified export from Bitwarden.");
                 Console.Error.WriteLine($"Details: {ex.Message}");
-                Environment.ExitCode = 1;
-            }
-            catch (VaultFormatException ex)
-            {
-                Console.Error.WriteLine($"\nERROR: {ex.Message}");
-                Environment.ExitCode = 1;
-            }
-            catch (KeyDerivationException ex)
-            {
-                Console.Error.WriteLine($"\nERROR: {ex.Message}");
-                Environment.ExitCode = 1;
-            }
-            catch (DecryptionException ex)
-            {
-                Console.Error.WriteLine($"\nERROR: {ex.Message}");
-                Environment.ExitCode = 1;
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine("\nAn unexpected error occurred:");
+                break;
+            case VaultFormatException or KeyDerivationException or DecryptionException:
+                Console.Error.WriteLine($"ERROR: {ex.Message}");
+                break;
+            default:
+                Console.Error.WriteLine("An unexpected error occurred:");
                 Console.Error.WriteLine($"ERROR: {ex.Message}");
                 Console.Error.WriteLine("\nPlease report this issue if you believe it's a bug.");
-                Environment.ExitCode = 1;
-            }
-        },
-        inputFileArgument,
-        includeSendsOption,
-        outputFileOption,
-        saveOption);
-
-        Command installPathCommand = new("install-path", "Adds the application's directory to the PATH environment variable for the current user.");
-        installPathCommand.SetHandler(InstallPath);
-        rootCommand.AddCommand(installPathCommand);
-
-        Command uninstallPathCommand = new("uninstall-path", "Removes the application's directory from the PATH environment variable for the current user.");
-        uninstallPathCommand.SetHandler(UninstallPath);
-        rootCommand.AddCommand(uninstallPathCommand);
-
-        return rootCommand.Invoke(args);
+                break;
+        }
     }
 
     private static string? DetermineOutputFile(string inputFile, string? outputFile, bool save)
@@ -165,47 +165,87 @@ public static class Program
 
     private static void RunDecryption(string inputFile, bool includeSends, string? outputFile)
     {
-        Console.WriteLine();
+        PrintOutputHeader(outputFile);
 
+        JsonNode rootNode = ReadAndParseVaultFile(inputFile);
+        VaultMetadata metadata = ParseVaultMetadata(rootNode, inputFile);
+        string password = GetPasswordFromUser(metadata);
+
+        var keyDerivationService = new KeyDerivationService(metadata);
+        BitwardenSecrets secrets = keyDerivationService.DeriveKeys(password);
+
+        JsonObject decryptedData = DecryptVaultData(rootNode, secrets, metadata, includeSends);
+        string decryptedJson = SerializeDecryptedData(decryptedData);
+
+        WriteOutput(decryptedJson, outputFile);
+    }
+
+    private static void PrintOutputHeader(string? outputFile)
+    {
+        Console.WriteLine();
         if (!string.IsNullOrEmpty(outputFile))
         {
             Console.WriteLine(File.Exists(outputFile)
                 ? $"Saving Output To: {outputFile} (File Exists, Will Be Overwritten)\n"
                 : $"Saving Output To: {outputFile}\n");
         }
+    }
 
+    private static JsonNode ReadAndParseVaultFile(string inputFile)
+    {
         string jsonData = File.ReadAllText(inputFile);
-        JsonNode rootNode = JsonNode.Parse(jsonData)!;
+        return JsonNode.Parse(jsonData)!;
+    }
 
-        VaultMetadata metadata = ParseVaultFile(rootNode, inputFile);
+    private static VaultMetadata ParseVaultMetadata(JsonNode rootNode, string inputFile)
+    {
+        var accountSelector = new ConsoleAccountSelector();
+        List<IVaultFormatParser> formatParsers =
+        [
+            new EncryptedJsonParser(),
+            new Format2024Parser(),
+            new NewFormatParser(),
+            new OldFormatParser(),
+        ];
+        var vaultParser = new VaultParser(formatParsers);
+        return vaultParser.Parse(rootNode, accountSelector, inputFile)
+            ?? throw new VaultFormatException("Could not determine the format of the provided JSON file or find any account data within it.");
+    }
 
+    private static string GetPasswordFromUser(VaultMetadata metadata)
+    {
         string passwordPromptDetail = metadata.FileFormat == "EncryptedJSON"
             ? $"Export Password (for salt: {metadata.KdfSalt})"
             : $"Master Password (for account: {metadata.AccountEmail})";
-        string password = ConsolePasswordReader.ReadPassword($"Enter {passwordPromptDetail}: ");
+        return ConsolePasswordReader.ReadPassword($"Enter {passwordPromptDetail}: ");
+    }
 
-        BitwardenSecrets secrets = KeyDerivationService.DeriveKeys(metadata, password);
-
-        DecryptionContext decryptionContext = new(
+    private static JsonObject DecryptVaultData(JsonNode rootNode, BitwardenSecrets secrets, VaultMetadata metadata, bool includeSends)
+    {
+        var decryptionContext = new DecryptionContext(
             FileFormat: metadata.FileFormat,
             AccountUuid: metadata.AccountUuid ?? string.Empty,
             AccountEmail: metadata.AccountEmail ?? string.Empty,
             IncludeSends: includeSends
         );
 
-        VaultDataDecryptor vaultDataDecryptor = new(secrets, decryptionContext);
-        JsonObject decryptedData = vaultDataDecryptor.DecryptVault(rootNode);
+        var vaultDataDecryptor = new VaultDataDecryptor(secrets, decryptionContext);
+        return vaultDataDecryptor.DecryptVault(rootNode);
+    }
 
+    private static string SerializeDecryptedData(JsonObject decryptedData)
+    {
         JsonObject finalOutputObject = StructureOutputJson(decryptedData);
-
-        JsonSerializerOptions jsonSerializerOptions = new()
+        var jsonSerializerOptions = new JsonSerializerOptions
         {
             WriteIndented = true,
             Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
         };
+        return finalOutputObject.ToJsonString(jsonSerializerOptions);
+    }
 
-        string decryptedJson = finalOutputObject.ToJsonString(jsonSerializerOptions);
-
+    private static void WriteOutput(string decryptedJson, string? outputFile)
+    {
         if (!string.IsNullOrEmpty(outputFile))
         {
             File.WriteAllText(outputFile, decryptedJson, System.Text.Encoding.UTF8);
@@ -217,24 +257,9 @@ public static class Program
         }
     }
 
-    private static VaultMetadata ParseVaultFile(JsonNode rootNode, string inputFile)
-    {
-        ConsoleAccountSelector accountSelector = new();
-        List<IVaultFormatParser> formatParsers =
-        [
-            new EncryptedJsonParser(),
-            new Format2024Parser(),
-            new NewFormatParser(),
-            new OldFormatParser(),
-        ];
-        VaultParser vaultParser = new(formatParsers);
-        return vaultParser.Parse(rootNode, accountSelector, inputFile)
-            ?? throw new VaultFormatException("Could not determine the format of the provided JSON file or find any account data within it.");
-    }
-
     private static JsonObject StructureOutputJson(JsonObject decryptedData)
     {
-        JsonObject finalOutputObject = [];
+        var finalOutputObject = new JsonObject();
 
         if (decryptedData.ContainsKey("folders"))
         {
@@ -247,7 +272,6 @@ public static class Program
             {
                 continue;
             }
-
             finalOutputObject[prop.Key] = prop.Value!.DeepClone();
         }
 
@@ -259,25 +283,12 @@ public static class Program
         return finalOutputObject;
     }
 
-    private static void InstallPath()
+    private static void HandleInstallPath()
     {
         try
         {
-            string? exePath = Environment.ProcessPath;
-            if (string.IsNullOrEmpty(exePath))
-            {
-                Console.Error.WriteLine("ERROR: Could not determine the application's path.");
-                Environment.ExitCode = 1;
-                return;
-            }
-
-            string? exeDir = Path.GetDirectoryName(exePath);
-            if (string.IsNullOrEmpty(exeDir))
-            {
-                Console.Error.WriteLine("ERROR: Could not determine the application's directory.");
-                Environment.ExitCode = 1;
-                return;
-            }
+            string? exeDir = GetExecutableDirectory();
+            if (exeDir is null) return;
 
             Console.WriteLine($"Attempting to add '{exeDir}' to the user PATH variable.");
 
@@ -299,31 +310,17 @@ public static class Program
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine("\nAn unexpected error occurred during installation:");
-            Console.Error.WriteLine($"ERROR: {ex.Message}");
+            HandleException(ex);
             Environment.ExitCode = 1;
         }
     }
 
-    private static void UninstallPath()
+    private static void HandleUninstallPath()
     {
         try
         {
-            string? exePath = Environment.ProcessPath;
-            if (string.IsNullOrEmpty(exePath))
-            {
-                Console.Error.WriteLine("ERROR: Could not determine the application's path.");
-                Environment.ExitCode = 1;
-                return;
-            }
-
-            string? exeDir = Path.GetDirectoryName(exePath);
-            if (string.IsNullOrEmpty(exeDir))
-            {
-                Console.Error.WriteLine("ERROR: Could not determine the application's directory.");
-                Environment.ExitCode = 1;
-                return;
-            }
+            string? exeDir = GetExecutableDirectory();
+            if (exeDir is null) return;
 
             Console.WriteLine($"Attempting to remove '{exeDir}' from the user PATH variable.");
 
@@ -351,10 +348,30 @@ public static class Program
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine("\nAn unexpected error occurred during uninstallation:");
-            Console.Error.WriteLine($"ERROR: {ex.Message}");
+            HandleException(ex);
             Environment.ExitCode = 1;
         }
+    }
+
+    private static string? GetExecutableDirectory()
+    {
+        string? exePath = Environment.ProcessPath;
+        if (string.IsNullOrEmpty(exePath))
+        {
+            Console.Error.WriteLine("ERROR: Could not determine the application's path.");
+            Environment.ExitCode = 1;
+            return null;
+        }
+
+        string? exeDir = Path.GetDirectoryName(exePath);
+        if (string.IsNullOrEmpty(exeDir))
+        {
+            Console.Error.WriteLine("ERROR: Could not determine the application's directory.");
+            Environment.ExitCode = 1;
+            return null;
+        }
+
+        return exeDir;
     }
 }
 ```
@@ -407,159 +424,6 @@ public class VaultMetadata
 
 ---
 
-### `BitwardenDecrypt\Decryptors\BitwardenDecryptor.cs`
-
-```csharp
-using BitwardenDecryptor.Core.VaultParsing;
-using BitwardenDecryptor.Core.VaultParsing.FormatParsers;
-using BitwardenDecryptor.Models;
-using BitwardenDecryptor.Utils;
-using System.Text.Encodings.Web;
-using System.Text.Json;
-using System.Text.Json.Nodes;
-
-namespace BitwardenDecryptor.Core;
-
-public class BitwardenDecryptor(CommandLineOptions options)
-{
-    private readonly CommandLineOptions options = options;
-
-    public string? DecryptBitwardenJson()
-    {
-        JsonNode? rootNode = LoadAndParseInputFile();
-
-        if (rootNode is null)
-        {
-            return null;
-        }
-
-        VaultMetadata? metadata = ParseVaultFile(rootNode);
-
-        if (metadata is null)
-        {
-            Environment.Exit(1);
-            return null;
-        }
-
-        string password = GetPasswordFromUser(metadata);
-
-        BitwardenSecrets secrets = KeyDerivationService.DeriveKeys(metadata, password);
-
-        DecryptionContext decryptionContext = new(
-            FileFormat: metadata.FileFormat,
-            AccountUuid: metadata.AccountUuid ?? string.Empty,
-            AccountEmail: metadata.AccountEmail ?? string.Empty,
-            IncludeSends: options.IncludeSends
-        );
-
-        VaultDataDecryptor vaultDataDecryptor = new(secrets, decryptionContext);
-        JsonObject decryptedData = vaultDataDecryptor.DecryptVault(rootNode);
-
-        JsonObject finalOutputObject = StructureOutputJson(decryptedData);
-
-        JsonSerializerOptions jsonSerializerOptions = new()
-        {
-            WriteIndented = true,
-            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-        };
-
-        return finalOutputObject.ToJsonString(jsonSerializerOptions);
-    }
-
-    private VaultMetadata? ParseVaultFile(JsonNode rootNode)
-    {
-        ConsoleAccountSelector accountSelector = new();
-        List<IVaultFormatParser> formatParsers =
-        [
-            new EncryptedJsonParser(),
-            new Format2024Parser(),
-            new NewFormatParser(),
-            new OldFormatParser(),
-        ];
-        VaultParser vaultParser = new(formatParsers);
-        return vaultParser.Parse(rootNode, accountSelector, options.InputFile);
-    }
-
-    private JsonNode? LoadAndParseInputFile()
-    {
-        string jsonData;
-
-        try
-        {
-            jsonData = File.ReadAllText(options.InputFile);
-        }
-        catch (FileNotFoundException)
-        {
-            Console.Error.WriteLine($"\nERROR: The input file '{options.InputFile}' was not found.");
-            Console.Error.WriteLine("\nPlease check the following:");
-            Console.Error.WriteLine($"  1. The file '{options.InputFile}' actually exists in the current directory.");
-            Console.Error.WriteLine("  2. You have spelled the filename correctly.");
-            Console.Error.WriteLine("  3. If the file is in a different directory, provide the full path to it.");
-            Console.Error.WriteLine("     Example: bitwardendecrypt \"C:\\Users\\YourUser\\Downloads\\data.json\"");
-            Environment.Exit(1);
-            return null;
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"ERROR: An error occurred reading: {options.InputFile} - {ex.Message}");
-            Environment.Exit(1);
-            return null;
-        }
-
-        try
-        {
-            return JsonNode.Parse(jsonData)!;
-        }
-        catch (JsonException ex)
-        {
-            Console.Error.WriteLine($"\nERROR: The file '{options.InputFile}' could not be read because it is not valid JSON.");
-            Console.Error.WriteLine("Please ensure it is a proper, unmodified export from Bitwarden.");
-            Console.Error.WriteLine($"Details: {ex.Message}");
-            Environment.Exit(1);
-            return null;
-        }
-    }
-
-    private string GetPasswordFromUser(VaultMetadata metadata)
-    {
-        string passwordPromptDetail = metadata.FileFormat == "EncryptedJSON"
-            ? $"Export Password (for salt: {metadata.KdfSalt})"
-            : $"Master Password (for account: {metadata.AccountEmail})";
-
-        return ConsolePasswordReader.ReadPassword($"Enter {passwordPromptDetail}: ");
-    }
-
-    private static JsonObject StructureOutputJson(JsonObject decryptedData)
-    {
-        JsonObject finalOutputObject = [];
-
-        if (decryptedData.ContainsKey("folders"))
-        {
-            finalOutputObject["folders"] = decryptedData["folders"]!.DeepClone();
-        }
-
-        foreach (KeyValuePair<string, JsonNode?> prop in decryptedData)
-        {
-            if (prop.Key is "folders" or "sends")
-            {
-                continue;
-            }
-
-            finalOutputObject[prop.Key] = prop.Value!.DeepClone();
-        }
-
-        if (decryptedData.ContainsKey("sends"))
-        {
-            finalOutputObject["sends"] = decryptedData["sends"]!.DeepClone();
-        }
-
-        return finalOutputObject;
-    }
-}
-```
-
----
-
 ### `BitwardenDecrypt\Decryptors\ProtectedKeyDecryptor.cs`
 
 ```csharp
@@ -568,7 +432,7 @@ using BitwardenDecryptor.Models;
 
 namespace BitwardenDecryptor.Core;
 
-public static class ProtectedKeyDecryptor
+public class ProtectedKeyDecryptor
 {
     public static SymmetricKeyDecryptionResult DecryptSymmetricKey(string cipherString, byte[] masterKey, byte[] masterMacKey, bool isExportValidationKey = false)
     {
@@ -577,40 +441,62 @@ public static class ProtectedKeyDecryptor
             return new(null, null, null, "CipherString is empty.");
         }
 
-        string[] parts = cipherString.Split('.');
-
-        if (parts.Length < 2)
+        (int encryptionType, string? error) = ParseCipherStringHeader(cipherString);
+        
+        if (error is not null)
         {
-            return new(null, null, null, "Invalid CipherString format.");
-        }
-
-        if (!int.TryParse(parts[0], out int encType))
-        {
-            return new(null, null, null, "Invalid encryption type in CipherString.");
+            return new(null, null, null, error);
         }
 
         DecryptionResult decryptionResult = CryptoService.VerifyAndDecryptAesCbc(masterKey, masterMacKey, cipherString);
-
+        
         if (decryptionResult.Error != null || decryptionResult.Plaintext == null)
         {
             return new(null, null, null, decryptionResult.Error);
         }
 
-        byte[] cleartextBytes = decryptionResult.Plaintext;
+        return ProcessDecryptedKey(decryptionResult.Plaintext, encryptionType, isExportValidationKey);
+    }
 
+    private static (int EncryptionType, string? Error) ParseCipherStringHeader(string cipherString)
+    {
+        string[] parts = cipherString.Split('.');
+
+        if (parts.Length < 2)
+        {
+            return (0, "Invalid CipherString format.");
+        }
+
+        if (!int.TryParse(parts[0], out int encType))
+        {
+            return (0, "Invalid encryption type in CipherString.");
+        }
+
+        return (encType, null);
+    }
+
+    private static SymmetricKeyDecryptionResult ProcessDecryptedKey(byte[] cleartextBytes, int encType, bool isExportValidationKey)
+    {
         if (!isExportValidationKey && encType == 2 && cleartextBytes.Length < 64)
         {
-            return new(null, null, null, "Decrypted key is too short. Likely wrong password (for data.json user key).");
+            return new(
+                null,
+                null,
+                null,
+                "Decrypted key is too short. Likely wrong password (for data.json user key).");
         }
 
-        if ((encType == 2 || encType == 0) && cleartextBytes.Length >= 64)
+        bool isCompositeKeyType = (encType == 2 || encType == 0);
+
+        if (!isCompositeKeyType || cleartextBytes.Length < 64)
         {
-            byte[] enc = cleartextBytes.Take(32).ToArray();
-            byte[] mac = cleartextBytes.Skip(32).Take(32).ToArray();
-            return new SymmetricKeyDecryptionResult(cleartextBytes, enc, mac, null);
+            return new(cleartextBytes, null, null, null);
         }
 
-        return new(cleartextBytes, null, null, null);
+        byte[] enc = [.. cleartextBytes.Take(32)];
+        byte[] mac = [.. cleartextBytes.Skip(32).Take(32)];
+
+        return new(cleartextBytes, enc, mac, null);
     }
 
     public static byte[]? DecryptRsaPrivateKeyBytes(string cipherString, byte[] encryptionKey, byte[] macKey)
@@ -672,13 +558,12 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
 
 namespace BitwardenDecryptor.Core;
 
 public class VaultItemDecryptor(BitwardenSecrets secrets)
 {
-    private static readonly Regex CipherStringRegex = new(@"\d.[^,]+|[^,]+=[^""]*", RegexOptions.Compiled);
+    private readonly ProtectedKeyDecryptor _protectedKeyDecryptor = new();
 
     public string DecryptCipherString(string cipherString, byte[] encryptionKey, byte[] macKey)
     {
@@ -796,25 +681,12 @@ public class VaultItemDecryptor(BitwardenSecrets secrets)
         byte[] sendEncKey = derivedSendKeyMaterial.Take(32).ToArray();
         byte[] sendMacKey = derivedSendKeyMaterial.Skip(32).Take(32).ToArray();
 
-        sendNode["key"] = BitConverter.ToString(derivedSendKeyMaterial).Replace("-", "").ToLowerInvariant();
-
-        string sendJsonString = sendNode.ToJsonString();
-        MatchCollection matches = CipherStringRegex.Matches(sendJsonString);
-
-        foreach (Match match in matches.Reverse())
+        if (sendNode is JsonObject obj)
         {
-            string decryptedValue = DecryptCipherString(match.Value, sendEncKey, sendMacKey);
-            string jsonEscapedValue = JsonSerializer.Serialize(decryptedValue);
-
-            if (jsonEscapedValue.Length >= 2)
-            {
-                jsonEscapedValue = jsonEscapedValue[1..^1];
-            }
-
-            sendJsonString = sendJsonString.Remove(match.Index, match.Length).Insert(match.Index, jsonEscapedValue);
+            obj["key"] = BitConverter.ToString(derivedSendKeyMaterial).Replace("-", "").ToLowerInvariant();
         }
 
-        return JsonNode.Parse(sendJsonString);
+        return DecryptAllCiphersInNode(sendNode, sendEncKey, sendMacKey);
     }
 
     public JsonObject ProcessGroupItem(JsonNode groupItemNode)
@@ -865,41 +737,59 @@ public class VaultItemDecryptor(BitwardenSecrets secrets)
             }
         }
 
-        string itemJsonString = groupItemNode.ToJsonString();
-        MatchCollection matches = CipherStringRegex.Matches(itemJsonString);
+        JsonNode decryptedNode = DecryptAllCiphersInNode(groupItemNode, itemEncKey, itemMacKey)!;
+        JsonObject processedNode = decryptedNode.AsObject();
 
-        foreach (Match? match in matches.Reverse())
-        {
-            if (match is null)
-            {
-                continue;
-            }
-
-            string decryptedValue = DecryptCipherString(match.Value, itemEncKey, itemMacKey);
-            string jsonEscapedValue = JsonSerializer.Serialize(decryptedValue);
-
-            if (jsonEscapedValue.Length >= 2)
-            {
-                jsonEscapedValue = jsonEscapedValue[1..^1];
-            }
-
-            itemJsonString = itemJsonString.Remove(match.Index, match.Length).Insert(match.Index, jsonEscapedValue);
-        }
-
-        JsonObject processedNode = JsonNode.Parse(itemJsonString)!.AsObject();
         string[] userIdKeys = ["userId", "organizationUserId"];
-
         foreach (string key in userIdKeys)
         {
-            if (!processedNode.ContainsKey(key))
+            if (processedNode.ContainsKey(key))
             {
-                continue;
+                _ = processedNode.Remove(key);
             }
-
-            _ = processedNode.Remove(key);
         }
 
         return processedNode;
+    }
+
+    private JsonNode? DecryptAllCiphersInNode(JsonNode? node, byte[] encKey, byte[] macKey)
+    {
+        switch (node)
+        {
+            case null:
+                return null;
+
+            case JsonValue val when val.TryGetValue<string>(out var strValue):
+                {
+                    bool isCipherString = strValue.Length > 2 && char.IsDigit(strValue[0]) && strValue[1] == '.' && strValue.Contains('|');
+                    return isCipherString
+                        ? JsonValue.Create(DecryptCipherString(strValue, encKey, macKey))
+                        : node.DeepClone();
+                }
+
+            case JsonObject obj:
+                {
+                    JsonObject newObj = new JsonObject();
+                    foreach (var prop in obj)
+                    {
+                        newObj[prop.Key] = DecryptAllCiphersInNode(prop.Value, encKey, macKey);
+                    }
+                    return newObj;
+                }
+
+            case JsonArray arr:
+                {
+                    var newArr = new JsonArray();
+                    foreach (var item in arr)
+                    {
+                        newArr.Add(DecryptAllCiphersInNode(item, encKey, macKey));
+                    }
+                    return newArr;
+                }
+
+            default:
+                return node.DeepClone();
+        }
     }
 }
 ```
@@ -1230,9 +1120,11 @@ using System.Text;
 
 namespace BitwardenDecryptor.Core;
 
-public class KeyDerivationService
+public class KeyDerivationService(VaultMetadata metadata)
 {
-    public static BitwardenSecrets DeriveKeys(VaultMetadata metadata, string password)
+    private readonly ProtectedKeyDecryptor _protectedKeyDecryptor = new();
+
+    public BitwardenSecrets DeriveKeys(string password)
     {
         BitwardenSecrets secrets = InitializeSecrets(metadata, password);
         byte[] kdfSaltInput = Encoding.UTF8.GetBytes(metadata.KdfSalt);
@@ -1261,7 +1153,7 @@ public class KeyDerivationService
         };
     }
 
-    private static void DeriveMasterKey(BitwardenSecrets secrets, byte[] kdfSaltInput)
+    private void DeriveMasterKey(BitwardenSecrets secrets, byte[] kdfSaltInput)
     {
         if (secrets.KdfType == 1) // Argon2id
         {
@@ -1273,7 +1165,7 @@ public class KeyDerivationService
         }
     }
 
-    private static void DeriveMasterKeyWithArgon2id(BitwardenSecrets secrets)
+    private void DeriveMasterKeyWithArgon2id(BitwardenSecrets secrets)
     {
         if (!secrets.KdfMemory.HasValue || !secrets.KdfParallelism.HasValue)
         {
@@ -1290,7 +1182,7 @@ public class KeyDerivationService
             32); // 32 bytes for master key
     }
 
-    private static void DeriveMasterKeyWithPbkdf2(BitwardenSecrets secrets, byte[] kdfSaltInput)
+    private void DeriveMasterKeyWithPbkdf2(BitwardenSecrets secrets, byte[] kdfSaltInput)
     {
         secrets.MasterKey = CryptoService.DerivePbkdf2Sha256(
            secrets.MasterPasswordBytes,
@@ -1299,19 +1191,19 @@ public class KeyDerivationService
            32); // 32 bytes for master key
     }
 
-    private static void DeriveMasterPasswordHash(BitwardenSecrets secrets)
+    private void DeriveMasterPasswordHash(BitwardenSecrets secrets)
     {
         byte[] masterPasswordHashDerived = CryptoService.DerivePbkdf2Sha256(secrets.MasterKey, secrets.MasterPasswordBytes, 1, 32);
         secrets.MasterPasswordHash = Convert.ToBase64String(masterPasswordHashDerived);
     }
 
-    private static void DeriveStretchedKeys(BitwardenSecrets secrets)
+    private void DeriveStretchedKeys(BitwardenSecrets secrets)
     {
         secrets.StretchedEncryptionKey = CryptoService.HkdfExpandSha256(secrets.MasterKey, Encoding.UTF8.GetBytes("enc"), 32);
         secrets.StretchedMacKey = CryptoService.HkdfExpandSha256(secrets.MasterKey, Encoding.UTF8.GetBytes("mac"), 32);
     }
 
-    private static void DecryptAndSetSymmetricKeys(BitwardenSecrets secrets, string fileFormat)
+    private void DecryptAndSetSymmetricKeys(BitwardenSecrets secrets, string fileFormat)
     {
         bool isForExportValidation = fileFormat == "EncryptedJSON";
         SymmetricKeyDecryptionResult result = ProtectedKeyDecryptor.DecryptSymmetricKey(
@@ -1328,7 +1220,7 @@ public class KeyDerivationService
         secrets.GeneratedMacKey = result.MacKey ?? [];
     }
 
-    private static void HandleSymmetricKeyDecryptionResult(string? error, byte[]? symKey)
+    private void HandleSymmetricKeyDecryptionResult(string? error, byte[]? symKey)
     {
         if (error == null && symKey != null)
         {
@@ -1353,7 +1245,7 @@ public class KeyDerivationService
         throw new KeyDerivationException(message);
     }
 
-    private static void DecryptAndSetRsaPrivateKey(BitwardenSecrets secrets)
+    private void DecryptAndSetRsaPrivateKey(BitwardenSecrets secrets)
     {
         if (string.IsNullOrEmpty(secrets.ProtectedRsaPrivateKeyCipherString))
         {

@@ -4,13 +4,12 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
 
 namespace BitwardenDecryptor.Core;
 
 public class VaultItemDecryptor(BitwardenSecrets secrets)
 {
-    private static readonly Regex CipherStringRegex = new(@"\d.[^,]+|[^,]+=[^""]*", RegexOptions.Compiled);
+    private readonly ProtectedKeyDecryptor _protectedKeyDecryptor = new();
 
     public string DecryptCipherString(string cipherString, byte[] encryptionKey, byte[] macKey)
     {
@@ -128,25 +127,12 @@ public class VaultItemDecryptor(BitwardenSecrets secrets)
         byte[] sendEncKey = derivedSendKeyMaterial.Take(32).ToArray();
         byte[] sendMacKey = derivedSendKeyMaterial.Skip(32).Take(32).ToArray();
 
-        sendNode["key"] = BitConverter.ToString(derivedSendKeyMaterial).Replace("-", "").ToLowerInvariant();
-
-        string sendJsonString = sendNode.ToJsonString();
-        MatchCollection matches = CipherStringRegex.Matches(sendJsonString);
-
-        foreach (Match match in matches.Reverse())
+        if (sendNode is JsonObject obj)
         {
-            string decryptedValue = DecryptCipherString(match.Value, sendEncKey, sendMacKey);
-            string jsonEscapedValue = JsonSerializer.Serialize(decryptedValue);
-
-            if (jsonEscapedValue.Length >= 2)
-            {
-                jsonEscapedValue = jsonEscapedValue[1..^1];
-            }
-
-            sendJsonString = sendJsonString.Remove(match.Index, match.Length).Insert(match.Index, jsonEscapedValue);
+            obj["key"] = BitConverter.ToString(derivedSendKeyMaterial).Replace("-", "").ToLowerInvariant();
         }
 
-        return JsonNode.Parse(sendJsonString);
+        return DecryptAllCiphersInNode(sendNode, sendEncKey, sendMacKey);
     }
 
     public JsonObject ProcessGroupItem(JsonNode groupItemNode)
@@ -197,40 +183,58 @@ public class VaultItemDecryptor(BitwardenSecrets secrets)
             }
         }
 
-        string itemJsonString = groupItemNode.ToJsonString();
-        MatchCollection matches = CipherStringRegex.Matches(itemJsonString);
+        JsonNode decryptedNode = DecryptAllCiphersInNode(groupItemNode, itemEncKey, itemMacKey)!;
+        JsonObject processedNode = decryptedNode.AsObject();
 
-        foreach (Match? match in matches.Reverse())
-        {
-            if (match is null)
-            {
-                continue;
-            }
-
-            string decryptedValue = DecryptCipherString(match.Value, itemEncKey, itemMacKey);
-            string jsonEscapedValue = JsonSerializer.Serialize(decryptedValue);
-
-            if (jsonEscapedValue.Length >= 2)
-            {
-                jsonEscapedValue = jsonEscapedValue[1..^1];
-            }
-
-            itemJsonString = itemJsonString.Remove(match.Index, match.Length).Insert(match.Index, jsonEscapedValue);
-        }
-
-        JsonObject processedNode = JsonNode.Parse(itemJsonString)!.AsObject();
         string[] userIdKeys = ["userId", "organizationUserId"];
-
         foreach (string key in userIdKeys)
         {
-            if (!processedNode.ContainsKey(key))
+            if (processedNode.ContainsKey(key))
             {
-                continue;
+                _ = processedNode.Remove(key);
             }
-
-            _ = processedNode.Remove(key);
         }
 
         return processedNode;
+    }
+
+    private JsonNode? DecryptAllCiphersInNode(JsonNode? node, byte[] encKey, byte[] macKey)
+    {
+        switch (node)
+        {
+            case null:
+                return null;
+
+            case JsonValue val when val.TryGetValue<string>(out var strValue):
+                {
+                    bool isCipherString = strValue.Length > 2 && char.IsDigit(strValue[0]) && strValue[1] == '.' && strValue.Contains('|');
+                    return isCipherString
+                        ? JsonValue.Create(DecryptCipherString(strValue, encKey, macKey))
+                        : node.DeepClone();
+                }
+
+            case JsonObject obj:
+                {
+                    JsonObject newObj = new JsonObject();
+                    foreach (var prop in obj)
+                    {
+                        newObj[prop.Key] = DecryptAllCiphersInNode(prop.Value, encKey, macKey);
+                    }
+                    return newObj;
+                }
+
+            case JsonArray arr:
+                {
+                    var newArr = new JsonArray();
+                    foreach (var item in arr)
+                    {
+                        newArr.Add(DecryptAllCiphersInNode(item, encKey, macKey));
+                    }
+                    return newArr;
+                }
+
+            default:
+                return node.DeepClone();
+        }
     }
 }

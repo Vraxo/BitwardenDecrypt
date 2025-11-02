@@ -3,7 +3,7 @@ using BitwardenDecryptor.Models;
 
 namespace BitwardenDecryptor.Core;
 
-public static class ProtectedKeyDecryptor
+public class ProtectedKeyDecryptor
 {
     public static SymmetricKeyDecryptionResult DecryptSymmetricKey(string cipherString, byte[] masterKey, byte[] masterMacKey, bool isExportValidationKey = false)
     {
@@ -12,40 +12,62 @@ public static class ProtectedKeyDecryptor
             return new(null, null, null, "CipherString is empty.");
         }
 
-        string[] parts = cipherString.Split('.');
-
-        if (parts.Length < 2)
+        (int encryptionType, string? error) = ParseCipherStringHeader(cipherString);
+        
+        if (error is not null)
         {
-            return new(null, null, null, "Invalid CipherString format.");
-        }
-
-        if (!int.TryParse(parts[0], out int encType))
-        {
-            return new(null, null, null, "Invalid encryption type in CipherString.");
+            return new(null, null, null, error);
         }
 
         DecryptionResult decryptionResult = CryptoService.VerifyAndDecryptAesCbc(masterKey, masterMacKey, cipherString);
-
+        
         if (decryptionResult.Error != null || decryptionResult.Plaintext == null)
         {
             return new(null, null, null, decryptionResult.Error);
         }
 
-        byte[] cleartextBytes = decryptionResult.Plaintext;
+        return ProcessDecryptedKey(decryptionResult.Plaintext, encryptionType, isExportValidationKey);
+    }
 
+    private static (int EncryptionType, string? Error) ParseCipherStringHeader(string cipherString)
+    {
+        string[] parts = cipherString.Split('.');
+
+        if (parts.Length < 2)
+        {
+            return (0, "Invalid CipherString format.");
+        }
+
+        if (!int.TryParse(parts[0], out int encType))
+        {
+            return (0, "Invalid encryption type in CipherString.");
+        }
+
+        return (encType, null);
+    }
+
+    private static SymmetricKeyDecryptionResult ProcessDecryptedKey(byte[] cleartextBytes, int encType, bool isExportValidationKey)
+    {
         if (!isExportValidationKey && encType == 2 && cleartextBytes.Length < 64)
         {
-            return new(null, null, null, "Decrypted key is too short. Likely wrong password (for data.json user key).");
+            return new(
+                null,
+                null,
+                null,
+                "Decrypted key is too short. Likely wrong password (for data.json user key).");
         }
 
-        if ((encType == 2 || encType == 0) && cleartextBytes.Length >= 64)
+        bool isCompositeKeyType = (encType == 2 || encType == 0);
+
+        if (!isCompositeKeyType || cleartextBytes.Length < 64)
         {
-            byte[] enc = cleartextBytes.Take(32).ToArray();
-            byte[] mac = cleartextBytes.Skip(32).Take(32).ToArray();
-            return new SymmetricKeyDecryptionResult(cleartextBytes, enc, mac, null);
+            return new(cleartextBytes, null, null, null);
         }
 
-        return new(cleartextBytes, null, null, null);
+        byte[] enc = [.. cleartextBytes.Take(32)];
+        byte[] mac = [.. cleartextBytes.Skip(32).Take(32)];
+
+        return new(cleartextBytes, enc, mac, null);
     }
 
     public static byte[]? DecryptRsaPrivateKeyBytes(string cipherString, byte[] encryptionKey, byte[] macKey)

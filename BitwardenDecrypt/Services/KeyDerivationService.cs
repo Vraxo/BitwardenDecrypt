@@ -5,9 +5,11 @@ using System.Text;
 
 namespace BitwardenDecryptor.Core;
 
-public class KeyDerivationService
+public class KeyDerivationService(VaultMetadata metadata)
 {
-    public static BitwardenSecrets DeriveKeys(VaultMetadata metadata, string password)
+    private readonly ProtectedKeyDecryptor _protectedKeyDecryptor = new();
+
+    public BitwardenSecrets DeriveKeys(string password)
     {
         BitwardenSecrets secrets = InitializeSecrets(metadata, password);
         byte[] kdfSaltInput = Encoding.UTF8.GetBytes(metadata.KdfSalt);
@@ -36,7 +38,7 @@ public class KeyDerivationService
         };
     }
 
-    private static void DeriveMasterKey(BitwardenSecrets secrets, byte[] kdfSaltInput)
+    private void DeriveMasterKey(BitwardenSecrets secrets, byte[] kdfSaltInput)
     {
         if (secrets.KdfType == 1) // Argon2id
         {
@@ -48,7 +50,7 @@ public class KeyDerivationService
         }
     }
 
-    private static void DeriveMasterKeyWithArgon2id(BitwardenSecrets secrets)
+    private void DeriveMasterKeyWithArgon2id(BitwardenSecrets secrets)
     {
         if (!secrets.KdfMemory.HasValue || !secrets.KdfParallelism.HasValue)
         {
@@ -65,7 +67,7 @@ public class KeyDerivationService
             32); // 32 bytes for master key
     }
 
-    private static void DeriveMasterKeyWithPbkdf2(BitwardenSecrets secrets, byte[] kdfSaltInput)
+    private void DeriveMasterKeyWithPbkdf2(BitwardenSecrets secrets, byte[] kdfSaltInput)
     {
         secrets.MasterKey = CryptoService.DerivePbkdf2Sha256(
            secrets.MasterPasswordBytes,
@@ -74,19 +76,19 @@ public class KeyDerivationService
            32); // 32 bytes for master key
     }
 
-    private static void DeriveMasterPasswordHash(BitwardenSecrets secrets)
+    private void DeriveMasterPasswordHash(BitwardenSecrets secrets)
     {
         byte[] masterPasswordHashDerived = CryptoService.DerivePbkdf2Sha256(secrets.MasterKey, secrets.MasterPasswordBytes, 1, 32);
         secrets.MasterPasswordHash = Convert.ToBase64String(masterPasswordHashDerived);
     }
 
-    private static void DeriveStretchedKeys(BitwardenSecrets secrets)
+    private void DeriveStretchedKeys(BitwardenSecrets secrets)
     {
         secrets.StretchedEncryptionKey = CryptoService.HkdfExpandSha256(secrets.MasterKey, Encoding.UTF8.GetBytes("enc"), 32);
         secrets.StretchedMacKey = CryptoService.HkdfExpandSha256(secrets.MasterKey, Encoding.UTF8.GetBytes("mac"), 32);
     }
 
-    private static void DecryptAndSetSymmetricKeys(BitwardenSecrets secrets, string fileFormat)
+    private void DecryptAndSetSymmetricKeys(BitwardenSecrets secrets, string fileFormat)
     {
         bool isForExportValidation = fileFormat == "EncryptedJSON";
         SymmetricKeyDecryptionResult result = ProtectedKeyDecryptor.DecryptSymmetricKey(
@@ -103,7 +105,7 @@ public class KeyDerivationService
         secrets.GeneratedMacKey = result.MacKey ?? [];
     }
 
-    private static void HandleSymmetricKeyDecryptionResult(string? error, byte[]? symKey)
+    private void HandleSymmetricKeyDecryptionResult(string? error, byte[]? symKey)
     {
         if (error == null && symKey != null)
         {
@@ -128,7 +130,7 @@ public class KeyDerivationService
         throw new KeyDerivationException(message);
     }
 
-    private static void DecryptAndSetRsaPrivateKey(BitwardenSecrets secrets)
+    private void DecryptAndSetRsaPrivateKey(BitwardenSecrets secrets)
     {
         if (string.IsNullOrEmpty(secrets.ProtectedRsaPrivateKeyCipherString))
         {
