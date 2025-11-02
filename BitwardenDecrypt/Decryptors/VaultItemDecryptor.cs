@@ -33,6 +33,7 @@ public class VaultItemDecryptor
         }
 
         (byte[]? ciphertext, string? error) = ParseAndDecodeRsaCipher(cipherString);
+        
         if (error is not null)
         {
             Console.Error.WriteLine($"{error}: {cipherString}");
@@ -45,6 +46,7 @@ public class VaultItemDecryptor
     public JsonNode? DecryptSend(JsonNode sendNode)
     {
         string? keyCipherString = sendNode["key"]?.GetValue<string>();
+        
         if (keyCipherString is null)
         {
             return sendNode;
@@ -144,6 +146,7 @@ public class VaultItemDecryptor
             {
                 obj["key"] = "";
             }
+
             return (itemKeyResult.EncKey, itemKeyResult.MacKey);
         }
         else if (itemKeyResult.Error is not null && itemNode is JsonObject obj)
@@ -167,18 +170,22 @@ public class VaultItemDecryptor
         }
 
         Console.Error.WriteLine($"Warning: User symmetric keys not fully available for item. Defaulting to stretched keys; decryption may fail for some fields.");
+        
         return (_secrets.StretchedEncryptionKey, _secrets.StretchedMacKey);
     }
 
     private static void RemoveUserSpecificFields(JsonObject processedNode)
     {
         string[] userIdKeys = ["userId", "organizationUserId"];
+        
         foreach (string key in userIdKeys)
         {
-            if (processedNode.ContainsKey(key))
+            if (!processedNode.ContainsKey(key))
             {
-                _ = processedNode.Remove(key);
+                continue;
             }
+
+            _ = processedNode.Remove(key);
         }
     }
 }

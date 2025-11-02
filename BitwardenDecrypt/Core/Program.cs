@@ -7,7 +7,10 @@ public static class Program
     public static int Main(string[] args)
     {
         IProtectedKeyDecryptor protectedKeyDecryptor = new ProtectedKeyDecryptor();
-        DecryptionHandler decryptionHandler = new(protectedKeyDecryptor);
+        var fileHandler = new VaultFileHandler();
+        var userInteractor = new ConsoleUserInteractor();
+        var orchestrator = new DecryptionOrchestrator(protectedKeyDecryptor, fileHandler, userInteractor);
+        var decryptionHandler = new DecryptionHandler(orchestrator, fileHandler);
 
         RootCommand rootCommand = BuildCommandLine(decryptionHandler);
         return rootCommand.Invoke(args);
