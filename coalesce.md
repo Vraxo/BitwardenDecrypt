@@ -37,12 +37,12 @@ public class DecryptionHandler
         _fileHandler = fileHandler;
     }
 
-    public void Execute(string inputFile, bool includeSends, string? outputFile, bool save)
+    public void Execute(string inputFile, bool includeSends, string? outputFile, bool save, string? password)
     {
         try
         {
             string? finalOutputFile = _fileHandler.DetermineOutputFile(inputFile, outputFile, save);
-            _orchestrator.RunDecryption(inputFile, includeSends, finalOutputFile);
+            _orchestrator.RunDecryption(inputFile, includeSends, finalOutputFile, password);
         }
         catch (Exception ex)
         {
@@ -50,21 +50,6 @@ public class DecryptionHandler
             Environment.ExitCode = 1;
         }
     }
-}
-```
-
----
-
-### `BitwardenDecrypt\Core\CommandLineOptions.cs`
-
-```csharp
-namespace BitwardenDecryptor;
-
-public class CommandLineOptions
-{
-    public string InputFile { get; set; } = "data.json";
-    public bool IncludeSends { get; set; } = false;
-    public string? OutputFile { get; set; }
 }
 ```
 
@@ -98,7 +83,7 @@ public static class ConsoleExceptionHandler
                 Console.Error.WriteLine("Please ensure it is a proper, unmodified export from Bitwarden.");
                 Console.Error.WriteLine($"Details: {ex.Message}");
                 break;
-            case VaultFormatException or KeyDerivationException or DecryptionException:
+            case VaultFormatException or KeyDerivationException or DecryptionException or InvalidOperationException:
                 Console.Error.WriteLine($"ERROR: {ex.Message}");
                 break;
             default:
@@ -200,8 +185,10 @@ public class ConsoleUserInteractor : IAccountSelector
 
 ```csharp
 using BitwardenDecryptor.Core.VaultParsing;
+using BitwardenDecryptor.Core.VaultParsing.FormatParsers;
 using BitwardenDecryptor.Exceptions;
 using BitwardenDecryptor.Models;
+using System.CommandLine;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -229,16 +216,19 @@ public class DecryptionOrchestrator
         _vaultParser = vaultParser;
     }
 
-    public void RunDecryption(string inputFile, bool includeSends, string? outputFile)
+    public void RunDecryption(string inputFile, bool includeSends, string? outputFile, string? password)
     {
         _userInteractor.PrintOutputHeader(outputFile);
 
         JsonNode rootNode = _fileHandler.ReadAndParseVaultFile(inputFile);
         VaultMetadata metadata = ParseVaultMetadata(rootNode, inputFile);
-        string password = _userInteractor.GetPasswordFromUser(metadata);
+
+        string effectivePassword = string.IsNullOrEmpty(password)
+            ? _userInteractor.GetPasswordFromUser(metadata)
+            : password;
 
         KeyDerivationService keyDerivationService = new(metadata, _protectedKeyDecryptor);
-        BitwardenSecrets secrets = keyDerivationService.DeriveKeys(password);
+        BitwardenSecrets secrets = keyDerivationService.DeriveKeys(effectivePassword);
 
         JsonObject decryptedData = DecryptVaultData(rootNode, secrets, metadata, includeSends);
         string decryptedJson = SerializeDecryptedData(decryptedData);
@@ -286,23 +276,26 @@ public class DecryptionOrchestrator
 
     private static JsonObject StructureOutputJson(JsonObject decryptedData)
     {
-        JsonObject finalOutputObject = [];
+        var finalOutputObject = new JsonObject();
+        var keys = decryptedData.Select(p => p.Key).ToList();
 
-        if (decryptedData.ContainsKey("folders"))
+        // Ensure "folders" is first, if it exists.
+        if (keys.Remove("folders"))
         {
             finalOutputObject["folders"] = decryptedData["folders"]!.DeepClone();
         }
 
-        foreach (KeyValuePair<string, JsonNode?> prop in decryptedData)
+        // Keep a placeholder for "sends" to be added last.
+        bool hasSends = keys.Remove("sends");
+
+        // Add all other items.
+        foreach (var key in keys)
         {
-            if (prop.Key is "folders" or "sends")
-            {
-                continue;
-            }
-            finalOutputObject[prop.Key] = prop.Value!.DeepClone();
+            finalOutputObject[key] = decryptedData[key]!.DeepClone();
         }
 
-        if (decryptedData.ContainsKey("sends"))
+        // Add "sends" at the end, if it exists.
+        if (hasSends)
         {
             finalOutputObject["sends"] = decryptedData["sends"]!.DeepClone();
         }
@@ -325,12 +318,7 @@ public static class PathHandler
     {
         try
         {
-            string? exeDir = GetExecutableDirectory();
-            if (exeDir is null)
-            {
-                return;
-            }
-
+            string exeDir = GetExecutableDirectory();
             Console.WriteLine($"Attempting to add '{exeDir}' to the user PATH variable.");
 
             string pathVar = Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.User) ?? "";
@@ -360,12 +348,7 @@ public static class PathHandler
     {
         try
         {
-            string? exeDir = GetExecutableDirectory();
-            if (exeDir is null)
-            {
-                return;
-            }
-
+            string exeDir = GetExecutableDirectory();
             Console.WriteLine($"Attempting to remove '{exeDir}' from the user PATH variable.");
 
             string? pathVar = Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.User);
@@ -397,22 +380,18 @@ public static class PathHandler
         }
     }
 
-    private static string? GetExecutableDirectory()
+    private static string GetExecutableDirectory()
     {
         string? exePath = Environment.ProcessPath;
         if (string.IsNullOrEmpty(exePath))
         {
-            Console.Error.WriteLine("ERROR: Could not determine the application's path.");
-            Environment.ExitCode = 1;
-            return null;
+            throw new InvalidOperationException("Could not determine the application's path.");
         }
 
         string? exeDir = Path.GetDirectoryName(exePath);
         if (string.IsNullOrEmpty(exeDir))
         {
-            Console.Error.WriteLine("ERROR: Could not determine the application's directory.");
-            Environment.ExitCode = 1;
-            return null;
+            throw new InvalidOperationException("Could not determine the application's directory.");
         }
 
         return exeDir;
@@ -477,13 +456,19 @@ public static class Program
             description: "Save the decrypted output to a file with a default name (e.g., 'data.json' becomes 'data.decrypted.json'). This is ignored if --output is used.");
         saveOption.AddAlias("-s");
 
+        Option<string?> passwordOption = new(
+            name: "--password",
+            description: "The Master Password or Export Password. If not provided, you will be prompted.");
+        passwordOption.AddAlias("-p");
+
         rootCommand.AddArgument(inputFileArgument);
         rootCommand.AddOption(includeSendsOption);
         rootCommand.AddOption(outputFileOption);
         rootCommand.AddOption(saveOption);
+        rootCommand.AddOption(passwordOption);
 
         rootCommand.SetHandler(decryptionHandler.Execute,
-            inputFileArgument, includeSendsOption, outputFileOption, saveOption);
+            inputFileArgument, includeSendsOption, outputFileOption, saveOption, passwordOption);
 
         Command installPathCommand = new("install-path", "Adds the application's directory to the PATH environment variable for the current user.");
         installPathCommand.SetHandler(PathHandler.HandleInstallPath);
@@ -840,6 +825,33 @@ public class VaultItemDecryptor
         _genericDecryptor = new GenericJsonDecryptor(secrets, protectedKeyDecryptor);
     }
 
+    public void DecryptAndStoreOrganizationKeys(JsonObject? orgKeysNode)
+    {
+        if (orgKeysNode is null || _secrets.RsaPrivateKeyDer is null)
+        {
+            return;
+        }
+
+        foreach (KeyValuePair<string, JsonNode?> kvp in orgKeysNode)
+        {
+            string? orgKeyCipher = kvp.Value?["key"]?.GetValue<string>() ?? kvp.Value?.GetValue<string>();
+
+            if (orgKeyCipher is null)
+            {
+                continue;
+            }
+
+            byte[]? decryptedOrgKey = DecryptRsaInternal(orgKeyCipher);
+
+            if (decryptedOrgKey is null)
+            {
+                continue;
+            }
+
+            _secrets.OrganizationKeys[kvp.Key] = decryptedOrgKey;
+        }
+    }
+
     public string DecryptCipherString(string cipherString, byte[] encryptionKey, byte[] macKey)
     {
         return _genericDecryptor.DecryptCipherString(cipherString, encryptionKey, macKey);
@@ -854,7 +866,9 @@ public class VaultItemDecryptor
 
         (byte[]? ciphertext, string? error) = ParseAndDecodeRsaCipher(cipherString);
 
-        return error is not null ? null : CryptoService.DecryptRsaOaepSha1(_secrets.RsaPrivateKeyDer, ciphertext!);
+        return error is not null 
+            ? null 
+            : CryptoService.DecryptRsaOaepSha1(_secrets.RsaPrivateKeyDer, ciphertext!);
     }
 
     public JsonNode? DecryptSend(JsonNode sendNode)
@@ -886,19 +900,23 @@ public class VaultItemDecryptor
         (byte[] itemEncKey, byte[] itemMacKey) = GetDecryptionKeysForItem(groupItemNode);
         JsonNode decryptedNode = _genericDecryptor.DecryptAllCiphersInNode(groupItemNode, itemEncKey, itemMacKey)!;
         JsonObject processedNode = decryptedNode.AsObject();
+        
         RemoveUserSpecificFields(processedNode);
+
         return processedNode;
     }
 
     private static (byte[]? Ciphertext, string? Error) ParseAndDecodeRsaCipher(string cipherString)
     {
         string[] parts = cipherString.Split('.');
+        
         if (parts.Length < 2)
         {
             return (null, "Invalid RSA CipherString format");
         }
 
         string[] dataParts = parts[1].Split('|');
+        
         if (dataParts.Length < 1)
         {
             return (null, "Invalid RSA CipherString data part");
@@ -945,6 +963,7 @@ public class VaultItemDecryptor
         (byte[] baseEncKey, byte[] baseMacKey) = GetBaseKeysForItem(orgId);
 
         string? individualItemKeyCipherString = itemNode["key"]?.GetValue<string>();
+        
         if (string.IsNullOrEmpty(individualItemKeyCipherString))
         {
             return (baseEncKey, baseMacKey);
@@ -1488,59 +1507,6 @@ public class KeyDerivationService
 
 ---
 
-### `BitwardenDecrypt\Utils\ConsoleAccountSelector.cs`
-
-```csharp
-using BitwardenDecryptor.Core.VaultParsing;
-using BitwardenDecryptor.Models;
-
-namespace BitwardenDecryptor.Utils;
-
-public class ConsoleAccountSelector : IAccountSelector
-{
-    public AccountInfo? SelectAccount(IReadOnlyList<AccountInfo> accounts, string context)
-    {
-        if (accounts.Count == 0)
-        {
-            Console.Error.WriteLine($"ERROR: No Accounts Found In {context}");
-            return null;
-        }
-
-        if (accounts.Count == 1)
-        {
-            return accounts[0];
-        }
-
-        Console.WriteLine("Which Account Would You Like To Decrypt?");
-
-        for (int i = 0; i < accounts.Count; i++)
-        {
-            Console.WriteLine($" {i + 1}:\t{accounts[i].Email}");
-        }
-
-        int choice = 0;
-
-        Console.WriteLine();
-
-        while (choice < 1 || choice > accounts.Count)
-        {
-            Console.Write("Enter Number: ");
-
-            if (!int.TryParse(Console.ReadLine(), out choice))
-            {
-                choice = 0;
-            }
-        }
-
-        Console.WriteLine();
-
-        return accounts[choice - 1];
-    }
-}
-```
-
----
-
 ### `BitwardenDecrypt\Utils\ConsolePasswordReader.cs`
 
 ```csharp
@@ -1851,24 +1817,35 @@ using System.Text.Json.Nodes;
 
 namespace BitwardenDecryptor.Core.VaultStrategies;
 
-public class LegacyJsonDecryptorStrategy(
-    JsonNode rootNode,
-    BitwardenSecrets secrets,
-    DecryptionContext context,
-    VaultItemDecryptor vaultItemDecryptor) : IVaultDecryptorStrategy
+public class LegacyJsonDecryptorStrategy : IVaultDecryptorStrategy
 {
+    private readonly JsonNode rootNode;
+    private readonly DecryptionContext context;
+    private readonly VaultItemDecryptor vaultItemDecryptor;
+
+    public LegacyJsonDecryptorStrategy(
+        JsonNode rootNode,
+        BitwardenSecrets secrets,
+        DecryptionContext context,
+        VaultItemDecryptor vaultItemDecryptor)
+    {
+        this.rootNode = rootNode;
+        this.context = context;
+        this.vaultItemDecryptor = vaultItemDecryptor;
+    }
+
     public JsonObject Decrypt()
     {
         JsonNode accountNode;
         if (context.FileFormat == "NEW")
         {
             accountNode = rootNode[context.AccountUuid!]!;
-            DecryptAndStoreOrganizationKeys(accountNode["keys"]?["organizationKeys"]?["encrypted"]?.AsObject());
+            vaultItemDecryptor.DecryptAndStoreOrganizationKeys(accountNode["keys"]?["organizationKeys"]?["encrypted"]?.AsObject());
         }
         else // OLD format
         {
             accountNode = rootNode;
-            DecryptAndStoreOrganizationKeys(accountNode["encOrgKeys"]?.AsObject());
+            vaultItemDecryptor.DecryptAndStoreOrganizationKeys(accountNode["encOrgKeys"]?.AsObject());
         }
 
         if ((context.FileFormat == "NEW" ? accountNode["data"] : accountNode) is not JsonObject dataContainerNode)
@@ -1919,29 +1896,6 @@ public class LegacyJsonDecryptorStrategy(
         }
 
         return decryptedEntries;
-    }
-
-    private void DecryptAndStoreOrganizationKeys(JsonObject? orgKeysNode)
-    {
-        if (orgKeysNode == null || secrets.RsaPrivateKeyDer == null)
-        {
-            return;
-        }
-
-        foreach (KeyValuePair<string, JsonNode?> kvp in orgKeysNode)
-        {
-            string? orgKeyCipher = kvp.Value?["key"]?.GetValue<string>() ?? kvp.Value?.GetValue<string>();
-            if (orgKeyCipher == null)
-            {
-                continue;
-            }
-
-            byte[]? decryptedOrgKey = vaultItemDecryptor.DecryptRsaInternal(orgKeyCipher);
-            if (decryptedOrgKey != null)
-            {
-                secrets.OrganizationKeys[kvp.Key] = decryptedOrgKey;
-            }
-        }
     }
 }
 ```

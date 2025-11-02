@@ -4,24 +4,35 @@ using System.Text.Json.Nodes;
 
 namespace BitwardenDecryptor.Core.VaultStrategies;
 
-public class LegacyJsonDecryptorStrategy(
-    JsonNode rootNode,
-    BitwardenSecrets secrets,
-    DecryptionContext context,
-    VaultItemDecryptor vaultItemDecryptor) : IVaultDecryptorStrategy
+public class LegacyJsonDecryptorStrategy : IVaultDecryptorStrategy
 {
+    private readonly JsonNode rootNode;
+    private readonly DecryptionContext context;
+    private readonly VaultItemDecryptor vaultItemDecryptor;
+
+    public LegacyJsonDecryptorStrategy(
+        JsonNode rootNode,
+        BitwardenSecrets secrets,
+        DecryptionContext context,
+        VaultItemDecryptor vaultItemDecryptor)
+    {
+        this.rootNode = rootNode;
+        this.context = context;
+        this.vaultItemDecryptor = vaultItemDecryptor;
+    }
+
     public JsonObject Decrypt()
     {
         JsonNode accountNode;
         if (context.FileFormat == "NEW")
         {
             accountNode = rootNode[context.AccountUuid!]!;
-            DecryptAndStoreOrganizationKeys(accountNode["keys"]?["organizationKeys"]?["encrypted"]?.AsObject());
+            vaultItemDecryptor.DecryptAndStoreOrganizationKeys(accountNode["keys"]?["organizationKeys"]?["encrypted"]?.AsObject());
         }
         else // OLD format
         {
             accountNode = rootNode;
-            DecryptAndStoreOrganizationKeys(accountNode["encOrgKeys"]?.AsObject());
+            vaultItemDecryptor.DecryptAndStoreOrganizationKeys(accountNode["encOrgKeys"]?.AsObject());
         }
 
         if ((context.FileFormat == "NEW" ? accountNode["data"] : accountNode) is not JsonObject dataContainerNode)
@@ -72,28 +83,5 @@ public class LegacyJsonDecryptorStrategy(
         }
 
         return decryptedEntries;
-    }
-
-    private void DecryptAndStoreOrganizationKeys(JsonObject? orgKeysNode)
-    {
-        if (orgKeysNode == null || secrets.RsaPrivateKeyDer == null)
-        {
-            return;
-        }
-
-        foreach (KeyValuePair<string, JsonNode?> kvp in orgKeysNode)
-        {
-            string? orgKeyCipher = kvp.Value?["key"]?.GetValue<string>() ?? kvp.Value?.GetValue<string>();
-            if (orgKeyCipher == null)
-            {
-                continue;
-            }
-
-            byte[]? decryptedOrgKey = vaultItemDecryptor.DecryptRsaInternal(orgKeyCipher);
-            if (decryptedOrgKey != null)
-            {
-                secrets.OrganizationKeys[kvp.Key] = decryptedOrgKey;
-            }
-        }
     }
 }

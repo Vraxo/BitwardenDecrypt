@@ -19,6 +19,33 @@ public class VaultItemDecryptor
         _genericDecryptor = new GenericJsonDecryptor(secrets, protectedKeyDecryptor);
     }
 
+    public void DecryptAndStoreOrganizationKeys(JsonObject? orgKeysNode)
+    {
+        if (orgKeysNode is null || _secrets.RsaPrivateKeyDer is null)
+        {
+            return;
+        }
+
+        foreach (KeyValuePair<string, JsonNode?> kvp in orgKeysNode)
+        {
+            string? orgKeyCipher = kvp.Value?["key"]?.GetValue<string>() ?? kvp.Value?.GetValue<string>();
+
+            if (orgKeyCipher is null)
+            {
+                continue;
+            }
+
+            byte[]? decryptedOrgKey = DecryptRsaInternal(orgKeyCipher);
+
+            if (decryptedOrgKey is null)
+            {
+                continue;
+            }
+
+            _secrets.OrganizationKeys[kvp.Key] = decryptedOrgKey;
+        }
+    }
+
     public string DecryptCipherString(string cipherString, byte[] encryptionKey, byte[] macKey)
     {
         return _genericDecryptor.DecryptCipherString(cipherString, encryptionKey, macKey);
@@ -33,7 +60,9 @@ public class VaultItemDecryptor
 
         (byte[]? ciphertext, string? error) = ParseAndDecodeRsaCipher(cipherString);
 
-        return error is not null ? null : CryptoService.DecryptRsaOaepSha1(_secrets.RsaPrivateKeyDer, ciphertext!);
+        return error is not null 
+            ? null 
+            : CryptoService.DecryptRsaOaepSha1(_secrets.RsaPrivateKeyDer, ciphertext!);
     }
 
     public JsonNode? DecryptSend(JsonNode sendNode)
@@ -65,19 +94,23 @@ public class VaultItemDecryptor
         (byte[] itemEncKey, byte[] itemMacKey) = GetDecryptionKeysForItem(groupItemNode);
         JsonNode decryptedNode = _genericDecryptor.DecryptAllCiphersInNode(groupItemNode, itemEncKey, itemMacKey)!;
         JsonObject processedNode = decryptedNode.AsObject();
+        
         RemoveUserSpecificFields(processedNode);
+
         return processedNode;
     }
 
     private static (byte[]? Ciphertext, string? Error) ParseAndDecodeRsaCipher(string cipherString)
     {
         string[] parts = cipherString.Split('.');
+        
         if (parts.Length < 2)
         {
             return (null, "Invalid RSA CipherString format");
         }
 
         string[] dataParts = parts[1].Split('|');
+        
         if (dataParts.Length < 1)
         {
             return (null, "Invalid RSA CipherString data part");
@@ -124,6 +157,7 @@ public class VaultItemDecryptor
         (byte[] baseEncKey, byte[] baseMacKey) = GetBaseKeysForItem(orgId);
 
         string? individualItemKeyCipherString = itemNode["key"]?.GetValue<string>();
+        
         if (string.IsNullOrEmpty(individualItemKeyCipherString))
         {
             return (baseEncKey, baseMacKey);
