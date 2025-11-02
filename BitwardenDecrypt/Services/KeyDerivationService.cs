@@ -7,8 +7,6 @@ namespace BitwardenDecryptor.Core;
 
 public class KeyDerivationService(VaultMetadata metadata)
 {
-    private readonly ProtectedKeyDecryptor _protectedKeyDecryptor = new();
-
     public BitwardenSecrets DeriveKeys(string password)
     {
         BitwardenSecrets secrets = InitializeSecrets(metadata, password);

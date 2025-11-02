@@ -5,8 +5,6 @@ namespace BitwardenDecryptor.Core.VaultParsing.FormatParsers;
 
 public class NewFormatParser : IVaultFormatParser
 {
-    private record KdfAndKeyParameters(string EmailOrSalt, int KdfIterations, int? KdfMemory, int? KdfParallelism, int KdfType, string ProtectedSymmKey, string? EncPrivateKey);
-
     public VaultMetadata? Parse(JsonNode rootNode, IAccountSelector accountSelector, string inputFile)
     {
         List<AccountInfo> potentialNewFormatAccounts = ExtractAccounts(rootNode);
@@ -26,7 +24,7 @@ public class NewFormatParser : IVaultFormatParser
         string selectedAccountUuid = selectedAccount.Uuid;
         string selectedAccountEmail = selectedAccount.Email;
 
-        KdfAndKeyParameters kdfParams = GetKdfAndKeyParameters(rootNode, selectedAccountUuid, selectedAccountEmail);
+        KdfParameters kdfParams = GetKdfParameters(rootNode, selectedAccountUuid, selectedAccountEmail);
 
         return new(
             fileFormat,
@@ -35,8 +33,8 @@ public class NewFormatParser : IVaultFormatParser
             kdfParams.KdfMemory,
             kdfParams.KdfParallelism,
             kdfParams.KdfType,
-            kdfParams.ProtectedSymmKey,
-            kdfParams.EncPrivateKey,
+            kdfParams.ProtectedSymmetricKey,
+            kdfParams.ProtectedRsaPrivateKey,
             selectedAccountEmail,
             selectedAccountUuid);
     }
@@ -49,7 +47,7 @@ public class NewFormatParser : IVaultFormatParser
             .ToList();
     }
 
-    private static KdfAndKeyParameters GetKdfAndKeyParameters(JsonNode rootNode, string accountUuid, string accountEmail)
+    private static KdfParameters GetKdfParameters(JsonNode rootNode, string accountUuid, string accountEmail)
     {
         JsonNode accountNode = rootNode[accountUuid]!;
         string emailOrSalt = accountEmail;

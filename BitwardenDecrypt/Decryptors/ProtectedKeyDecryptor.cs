@@ -3,7 +3,7 @@ using BitwardenDecryptor.Models;
 
 namespace BitwardenDecryptor.Core;
 
-public class ProtectedKeyDecryptor
+public static class ProtectedKeyDecryptor
 {
     public static SymmetricKeyDecryptionResult DecryptSymmetricKey(string cipherString, byte[] masterKey, byte[] masterMacKey, bool isExportValidationKey = false)
     {
@@ -13,14 +13,14 @@ public class ProtectedKeyDecryptor
         }
 
         (int encryptionType, string? error) = ParseCipherStringHeader(cipherString);
-        
+
         if (error is not null)
         {
             return new(null, null, null, error);
         }
 
         DecryptionResult decryptionResult = CryptoService.VerifyAndDecryptAesCbc(masterKey, masterMacKey, cipherString);
-        
+
         if (decryptionResult.Error != null || decryptionResult.Plaintext == null)
         {
             return new(null, null, null, decryptionResult.Error);
