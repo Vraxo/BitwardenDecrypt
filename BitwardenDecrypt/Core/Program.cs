@@ -50,13 +50,19 @@ public static class Program
             description: "Save the decrypted output to a file with a default name (e.g., 'data.json' becomes 'data.decrypted.json'). This is ignored if --output is used.");
         saveOption.AddAlias("-s");
 
+        Option<string?> passwordOption = new(
+            name: "--password",
+            description: "The Master Password or Export Password. If not provided, you will be prompted.");
+        passwordOption.AddAlias("-p");
+
         rootCommand.AddArgument(inputFileArgument);
         rootCommand.AddOption(includeSendsOption);
         rootCommand.AddOption(outputFileOption);
         rootCommand.AddOption(saveOption);
+        rootCommand.AddOption(passwordOption);
 
         rootCommand.SetHandler(decryptionHandler.Execute,
-            inputFileArgument, includeSendsOption, outputFileOption, saveOption);
+            inputFileArgument, includeSendsOption, outputFileOption, saveOption, passwordOption);
 
         Command installPathCommand = new("install-path", "Adds the application's directory to the PATH environment variable for the current user.");
         installPathCommand.SetHandler(PathHandler.HandleInstallPath);

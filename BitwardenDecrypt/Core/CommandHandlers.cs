@@ -11,12 +11,12 @@ public class DecryptionHandler
         _fileHandler = fileHandler;
     }
 
-    public void Execute(string inputFile, bool includeSends, string? outputFile, bool save)
+    public void Execute(string inputFile, bool includeSends, string? outputFile, bool save, string? password)
     {
         try
         {
             string? finalOutputFile = _fileHandler.DetermineOutputFile(inputFile, outputFile, save);
-            _orchestrator.RunDecryption(inputFile, includeSends, finalOutputFile);
+            _orchestrator.RunDecryption(inputFile, includeSends, finalOutputFile, password);
         }
         catch (Exception ex)
         {
