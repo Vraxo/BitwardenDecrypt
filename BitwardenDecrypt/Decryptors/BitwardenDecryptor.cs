@@ -1,11 +1,10 @@
-﻿using System.Collections.Generic;
-using System.Text.Encodings.Web;
-using System.Text.Json;
-using System.Text.Json.Nodes;
-using BitwardenDecryptor.Core.VaultParsing;
+﻿using BitwardenDecryptor.Core.VaultParsing;
 using BitwardenDecryptor.Core.VaultParsing.FormatParsers;
 using BitwardenDecryptor.Models;
 using BitwardenDecryptor.Utils;
+using System.Text.Encodings.Web;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace BitwardenDecryptor.Core;
 
@@ -16,14 +15,14 @@ public class BitwardenDecryptor(CommandLineOptions options)
     public string? DecryptBitwardenJson()
     {
         JsonNode? rootNode = LoadAndParseInputFile();
-        
+
         if (rootNode is null)
         {
             return null;
         }
 
         VaultMetadata? metadata = ParseVaultFile(rootNode);
-        
+
         if (metadata is null)
         {
             Environment.Exit(1);
@@ -54,15 +53,15 @@ public class BitwardenDecryptor(CommandLineOptions options)
 
     private VaultMetadata? ParseVaultFile(JsonNode rootNode)
     {
-        var accountSelector = new ConsoleAccountSelector();
-        var formatParsers = new List<IVaultFormatParser>
-        {
+        ConsoleAccountSelector accountSelector = new();
+        List<IVaultFormatParser> formatParsers =
+        [
             new EncryptedJsonParser(),
             new Format2024Parser(),
             new NewFormatParser(),
             new OldFormatParser(),
-        };
-        var vaultParser = new VaultParser(formatParsers);
+        ];
+        VaultParser vaultParser = new(formatParsers);
         return vaultParser.Parse(rootNode, accountSelector, options.InputFile);
     }
 
@@ -126,7 +125,7 @@ public class BitwardenDecryptor(CommandLineOptions options)
 
         foreach (KeyValuePair<string, JsonNode?> prop in decryptedData)
         {
-            if (prop.Key == "folders" || prop.Key == "sends")
+            if (prop.Key is "folders" or "sends")
             {
                 continue;
             }

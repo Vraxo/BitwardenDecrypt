@@ -1,5 +1,3 @@
-using System;
-using System.Collections.Generic;
 using BitwardenDecryptor.Core.VaultParsing;
 using BitwardenDecryptor.Models;
 

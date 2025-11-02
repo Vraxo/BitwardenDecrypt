@@ -1,7 +1,7 @@
-﻿using System.Security.Cryptography;
-using BitwardenDecryptor.Models;
+﻿using BitwardenDecryptor.Models;
 using Isopoh.Cryptography.Argon2;
 using Isopoh.Cryptography.SecureArray;
+using System.Security.Cryptography;
 
 namespace BitwardenDecryptor.Crypto;
 

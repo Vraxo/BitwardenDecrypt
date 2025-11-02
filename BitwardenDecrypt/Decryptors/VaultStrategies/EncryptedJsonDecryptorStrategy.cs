@@ -1,5 +1,5 @@
-using System.Text.Json.Nodes;
 using BitwardenDecryptor.Models;
+using System.Text.Json.Nodes;
 
 namespace BitwardenDecryptor.Core.VaultStrategies;
 
@@ -32,7 +32,7 @@ public class EncryptedJsonDecryptorStrategy(
         {
             decryptedEntries[prop.Key] = prop.Value?.DeepClone();
         }
-        
+
         return decryptedEntries;
     }
 }

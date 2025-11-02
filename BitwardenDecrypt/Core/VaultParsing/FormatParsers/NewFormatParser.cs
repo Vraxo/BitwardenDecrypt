@@ -1,15 +1,12 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text.Json.Nodes;
 using BitwardenDecryptor.Models;
+using System.Text.Json.Nodes;
 
 namespace BitwardenDecryptor.Core.VaultParsing.FormatParsers;
 
 public class NewFormatParser : IVaultFormatParser
 {
     private record KdfAndKeyParameters(string EmailOrSalt, int KdfIterations, int? KdfMemory, int? KdfParallelism, int KdfType, string ProtectedSymmKey, string? EncPrivateKey);
-    
+
     public VaultMetadata? Parse(JsonNode rootNode, IAccountSelector accountSelector, string inputFile)
     {
         List<AccountInfo> potentialNewFormatAccounts = ExtractAccounts(rootNode);
@@ -21,7 +18,7 @@ public class NewFormatParser : IVaultFormatParser
 
         string fileFormat = "NEW";
 
-        var selectedAccount = accountSelector.SelectAccount(potentialNewFormatAccounts, inputFile);
+        AccountInfo? selectedAccount = accountSelector.SelectAccount(potentialNewFormatAccounts, inputFile);
         if (selectedAccount is null)
         {
             return null;
@@ -43,7 +40,7 @@ public class NewFormatParser : IVaultFormatParser
             selectedAccountEmail,
             selectedAccountUuid);
     }
-    
+
     private static List<AccountInfo> ExtractAccounts(JsonNode rootNode)
     {
         return rootNode.AsObject()
@@ -64,7 +61,7 @@ public class NewFormatParser : IVaultFormatParser
         JsonNode keysNode = accountNode["keys"]!;
         string protectedSymmKey = keysNode["masterKeyEncryptedUserKey"]?.GetValue<string>() ?? keysNode["cryptoSymmetricKey"]!["encrypted"]!.GetValue<string>();
         string? encPrivateKey = keysNode["privateKey"]!["encrypted"]!.GetValue<string>();
-        
+
         return new(
             emailOrSalt,
             kdfIterations,

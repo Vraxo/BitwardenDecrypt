@@ -1,5 +1,5 @@
-using System.Text.Json.Nodes;
 using BitwardenDecryptor.Models;
+using System.Text.Json.Nodes;
 
 namespace BitwardenDecryptor.Core.VaultStrategies;
 
@@ -20,10 +20,13 @@ public class Format2024DecryptorStrategy(
         foreach (string groupKey in groupsToProcess)
         {
             JsonObject? groupDataNode = rootNode[$"user_{options.AccountUuid}_{groupKey}"]?.AsObject();
-            if (groupDataNode == null) continue;
+            if (groupDataNode == null)
+            {
+                continue;
+            }
 
             JsonArray itemsArray = [];
-            foreach (var itemKvp in groupDataNode)
+            foreach (KeyValuePair<string, JsonNode?> itemKvp in groupDataNode)
             {
                 if (itemKvp.Value is JsonObject itemObj)
                 {
@@ -62,10 +65,16 @@ public class Format2024DecryptorStrategy(
         foreach (KeyValuePair<string, JsonNode?> kvp in orgKeysNode)
         {
             string? orgKeyCipher = kvp.Value?["key"]?.GetValue<string>() ?? kvp.Value?.GetValue<string>();
-            if (orgKeyCipher == null) continue;
+            if (orgKeyCipher == null)
+            {
+                continue;
+            }
 
             byte[]? decryptedOrgKey = vaultItemDecryptor.DecryptRsaInternal(orgKeyCipher);
-            if (decryptedOrgKey != null) secrets.OrganizationKeys[kvp.Key] = decryptedOrgKey;
+            if (decryptedOrgKey != null)
+            {
+                secrets.OrganizationKeys[kvp.Key] = decryptedOrgKey;
+            }
         }
     }
 

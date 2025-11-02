@@ -1,10 +1,10 @@
+using BitwardenDecryptor.Crypto;
+using BitwardenDecryptor.Models;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
-using BitwardenDecryptor.Crypto;
-using BitwardenDecryptor.Models;
 
 namespace BitwardenDecryptor.Core;
 
@@ -51,12 +51,9 @@ public class VaultItemDecryptor(BitwardenSecrets secrets)
 
             SymmetricKeyDecryptionResult fallbackResult = ProtectedKeyDecryptor.DecryptSymmetricKey(cipherString, secrets.GeneratedEncryptionKey, secrets.GeneratedMacKey);
 
-            if (fallbackResult.Error is null && fallbackResult.FullKey is not null)
-            {
-                return BitConverter.ToString(fallbackResult.FullKey).Replace("-", "").ToLowerInvariant();
-            }
-
-            return $"ERROR Decrypting (UTF-8 decode failed, fallback also failed): {cipherString}";
+            return fallbackResult.Error is null && fallbackResult.FullKey is not null
+                ? BitConverter.ToString(fallbackResult.FullKey).Replace("-", "").ToLowerInvariant()
+                : $"ERROR Decrypting (UTF-8 decode failed, fallback also failed): {cipherString}";
         }
     }
 
@@ -231,7 +228,7 @@ public class VaultItemDecryptor(BitwardenSecrets secrets)
                 continue;
             }
 
-            processedNode.Remove(key);
+            _ = processedNode.Remove(key);
         }
 
         return processedNode;

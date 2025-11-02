@@ -1,4 +1,3 @@
-using System;
 using System.Text.Json.Nodes;
 
 namespace BitwardenDecryptor.Core.VaultParsing.FormatParsers;

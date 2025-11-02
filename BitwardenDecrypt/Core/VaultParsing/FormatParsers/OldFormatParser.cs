@@ -31,7 +31,7 @@ public class OldFormatParser : IVaultFormatParser
             accountEmail,
             accountUuid);
     }
-    
+
     private static KdfAndKeyParameters GetKdfAndKeyParameters(JsonNode rootNode, string accountEmail)
     {
         string emailOrSalt = accountEmail;

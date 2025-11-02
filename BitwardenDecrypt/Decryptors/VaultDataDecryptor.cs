@@ -1,6 +1,6 @@
-﻿using System.Text.Json.Nodes;
-using BitwardenDecryptor.Core.VaultStrategies;
+﻿using BitwardenDecryptor.Core.VaultStrategies;
 using BitwardenDecryptor.Models;
+using System.Text.Json.Nodes;
 
 namespace BitwardenDecryptor.Core;
 
@@ -14,7 +14,7 @@ public class VaultDataDecryptor(BitwardenSecrets secrets, CommandLineOptions opt
 
     private IVaultDecryptorStrategy CreateStrategy(JsonNode rootNode)
     {
-        var vaultItemDecryptor = new VaultItemDecryptor(secrets);
+        VaultItemDecryptor vaultItemDecryptor = new(secrets);
 
         return options.FileFormat switch
         {

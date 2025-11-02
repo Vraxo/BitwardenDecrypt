@@ -1,5 +1,5 @@
-using System.Text.Json.Nodes;
 using BitwardenDecryptor.Models;
+using System.Text.Json.Nodes;
 
 namespace BitwardenDecryptor.Core.VaultStrategies;
 
@@ -85,10 +85,16 @@ public class LegacyJsonDecryptorStrategy(
         foreach (KeyValuePair<string, JsonNode?> kvp in orgKeysNode)
         {
             string? orgKeyCipher = kvp.Value?["key"]?.GetValue<string>() ?? kvp.Value?.GetValue<string>();
-            if (orgKeyCipher == null) continue;
+            if (orgKeyCipher == null)
+            {
+                continue;
+            }
 
             byte[]? decryptedOrgKey = vaultItemDecryptor.DecryptRsaInternal(orgKeyCipher);
-            if (decryptedOrgKey != null) secrets.OrganizationKeys[kvp.Key] = decryptedOrgKey;
+            if (decryptedOrgKey != null)
+            {
+                secrets.OrganizationKeys[kvp.Key] = decryptedOrgKey;
+            }
         }
     }
 }

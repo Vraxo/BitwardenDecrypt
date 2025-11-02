@@ -22,11 +22,11 @@ public static class ConsolePasswordReader
 
             if (keyInfo.Key == ConsoleKey.Backspace && password.Length > 0)
             {
-                password.Remove(password.Length - 1, 1);
+                _ = password.Remove(password.Length - 1, 1);
             }
             else if (!char.IsControl(keyInfo.KeyChar))
             {
-                password.Append(keyInfo.KeyChar);
+                _ = password.Append(keyInfo.KeyChar);
             }
         }
 

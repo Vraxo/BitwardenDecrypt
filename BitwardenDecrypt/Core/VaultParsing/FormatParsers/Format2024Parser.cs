@@ -1,15 +1,12 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text.Json.Nodes;
 using BitwardenDecryptor.Models;
+using System.Text.Json.Nodes;
 
 namespace BitwardenDecryptor.Core.VaultParsing.FormatParsers;
 
 public class Format2024Parser : IVaultFormatParser
 {
     private record KdfAndKeyParameters(string EmailOrSalt, int KdfIterations, int? KdfMemory, int? KdfParallelism, int KdfType, string ProtectedSymmKey, string? EncPrivateKey);
-    
+
     public VaultMetadata? Parse(JsonNode rootNode, IAccountSelector accountSelector, string inputFile)
     {
         if (rootNode["global_account_accounts"] is not JsonObject accountsNode)
@@ -21,7 +18,7 @@ public class Format2024Parser : IVaultFormatParser
         List<AccountInfo> validAccounts = ExtractAccounts(accountsNode);
 
         AccountInfo? selectedAccount = accountSelector.SelectAccount(validAccounts, inputFile);
-        
+
         if (selectedAccount is null)
         {
             return null;
@@ -63,7 +60,7 @@ public class Format2024Parser : IVaultFormatParser
         int kdfType = kdfConfigNode["kdfType"]!.GetValue<int>();
         string protectedSymmKey = rootNode[$"user_{accountUuid}_masterPassword_masterKeyEncryptedUserKey"]!.GetValue<string>();
         string? encPrivateKey = rootNode[$"user_{accountUuid}_crypto_privateKey"]?.GetValue<string>();
-        
+
         return new(
             emailOrSalt,
             kdfIterations,
