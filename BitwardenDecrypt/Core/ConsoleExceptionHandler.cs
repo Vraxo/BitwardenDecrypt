@@ -23,7 +23,7 @@ public static class ConsoleExceptionHandler
                 Console.Error.WriteLine("Please ensure it is a proper, unmodified export from Bitwarden.");
                 Console.Error.WriteLine($"Details: {ex.Message}");
                 break;
-            case VaultFormatException or KeyDerivationException or DecryptionException:
+            case VaultFormatException or KeyDerivationException or DecryptionException or InvalidOperationException:
                 Console.Error.WriteLine($"ERROR: {ex.Message}");
                 break;
             default:

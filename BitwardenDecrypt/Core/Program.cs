@@ -1,6 +1,6 @@
-﻿using System.CommandLine;
-using BitwardenDecryptor.Core.VaultParsing;
+﻿using BitwardenDecryptor.Core.VaultParsing;
 using BitwardenDecryptor.Core.VaultParsing.FormatParsers;
+using System.CommandLine;
 
 namespace BitwardenDecryptor.Core;
 
@@ -9,8 +9,8 @@ public static class Program
     public static int Main(string[] args)
     {
         IProtectedKeyDecryptor protectedKeyDecryptor = new ProtectedKeyDecryptor();
-        var fileHandler = new VaultFileHandler();
-        var userInteractor = new ConsoleUserInteractor();
+        VaultFileHandler fileHandler = new();
+        ConsoleUserInteractor userInteractor = new();
 
         VaultParser vaultParser = new(
         [

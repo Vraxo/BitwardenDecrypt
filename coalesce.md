@@ -200,7 +200,6 @@ public class ConsoleUserInteractor : IAccountSelector
 
 ```csharp
 using BitwardenDecryptor.Core.VaultParsing;
-using BitwardenDecryptor.Core.VaultParsing.FormatParsers;
 using BitwardenDecryptor.Exceptions;
 using BitwardenDecryptor.Models;
 using System.Text.Encodings.Web;
@@ -215,16 +214,19 @@ public class DecryptionOrchestrator
     private readonly VaultFileHandler _fileHandler;
     private readonly ConsoleUserInteractor _userInteractor;
     private readonly IAccountSelector _accountSelector;
+    private readonly VaultParser _vaultParser;
 
     public DecryptionOrchestrator(
         IProtectedKeyDecryptor protectedKeyDecryptor,
         VaultFileHandler fileHandler,
-        ConsoleUserInteractor userInteractor)
+        ConsoleUserInteractor userInteractor,
+        VaultParser vaultParser)
     {
         _protectedKeyDecryptor = protectedKeyDecryptor;
         _fileHandler = fileHandler;
         _userInteractor = userInteractor;
         _accountSelector = userInteractor;
+        _vaultParser = vaultParser;
     }
 
     public void RunDecryption(string inputFile, bool includeSends, string? outputFile)
@@ -254,15 +256,7 @@ public class DecryptionOrchestrator
 
     private VaultMetadata ParseVaultMetadata(JsonNode rootNode, string inputFile)
     {
-        List<IVaultFormatParser> formatParsers =
-        [
-            new EncryptedJsonParser(),
-            new Format2024Parser(),
-            new NewFormatParser(),
-            new OldFormatParser(),
-        ];
-        VaultParser vaultParser = new(formatParsers);
-        return vaultParser.Parse(rootNode, _accountSelector, inputFile)
+        return _vaultParser.Parse(rootNode, _accountSelector, inputFile)
             ?? throw new VaultFormatException("Could not determine the format of the provided JSON file or find any account data within it.");
     }
 
@@ -431,6 +425,8 @@ public static class PathHandler
 ### `BitwardenDecrypt\Core\Program.cs`
 
 ```csharp
+using BitwardenDecryptor.Core.VaultParsing;
+using BitwardenDecryptor.Core.VaultParsing.FormatParsers;
 using System.CommandLine;
 
 namespace BitwardenDecryptor.Core;
@@ -440,12 +436,22 @@ public static class Program
     public static int Main(string[] args)
     {
         IProtectedKeyDecryptor protectedKeyDecryptor = new ProtectedKeyDecryptor();
-        var fileHandler = new VaultFileHandler();
-        var userInteractor = new ConsoleUserInteractor();
-        var orchestrator = new DecryptionOrchestrator(protectedKeyDecryptor, fileHandler, userInteractor);
-        var decryptionHandler = new DecryptionHandler(orchestrator, fileHandler);
+        VaultFileHandler fileHandler = new();
+        ConsoleUserInteractor userInteractor = new();
+
+        VaultParser vaultParser = new(
+        [
+            new EncryptedJsonParser(),
+            new Format2024Parser(),
+            new NewFormatParser(),
+            new OldFormatParser(),
+        ]);
+
+        DecryptionOrchestrator orchestrator = new(protectedKeyDecryptor, fileHandler, userInteractor, vaultParser);
+        DecryptionHandler decryptionHandler = new(orchestrator, fileHandler);
 
         RootCommand rootCommand = BuildCommandLine(decryptionHandler);
+
         return rootCommand.Invoke(args);
     }
 
@@ -843,25 +849,18 @@ public class VaultItemDecryptor
     {
         if (_secrets.RsaPrivateKeyDer is null)
         {
-            Console.Error.WriteLine("Cannot decrypt RSA cipher string as private key is not available.");
             return null;
         }
 
         (byte[]? ciphertext, string? error) = ParseAndDecodeRsaCipher(cipherString);
-        
-        if (error is not null)
-        {
-            Console.Error.WriteLine($"{error}: {cipherString}");
-            return null;
-        }
 
-        return CryptoService.DecryptRsaOaepSha1(_secrets.RsaPrivateKeyDer, ciphertext!);
+        return error is not null ? null : CryptoService.DecryptRsaOaepSha1(_secrets.RsaPrivateKeyDer, ciphertext!);
     }
 
     public JsonNode? DecryptSend(JsonNode sendNode)
     {
         string? keyCipherString = sendNode["key"]?.GetValue<string>();
-        
+
         if (keyCipherString is null)
         {
             return sendNode;
@@ -920,7 +919,6 @@ public class VaultItemDecryptor
     {
         if (_secrets.GeneratedEncryptionKey.Length == 0 || _secrets.GeneratedMacKey.Length == 0)
         {
-            Console.Error.WriteLine("ERROR: Cannot decrypt Send key as user symmetric keys are not fully available.");
             return null;
         }
 
@@ -928,7 +926,6 @@ public class VaultItemDecryptor
 
         if (sendKeyResult.Error is not null || sendKeyResult.FullKey is null)
         {
-            Console.Error.WriteLine($"Failed to decrypt Send key: {sendKeyResult.Error}");
             return null;
         }
 
@@ -984,15 +981,13 @@ public class VaultItemDecryptor
             return (_secrets.GeneratedEncryptionKey, _secrets.GeneratedMacKey);
         }
 
-        Console.Error.WriteLine($"Warning: User symmetric keys not fully available for item. Defaulting to stretched keys; decryption may fail for some fields.");
-        
         return (_secrets.StretchedEncryptionKey, _secrets.StretchedMacKey);
     }
 
     private static void RemoveUserSpecificFields(JsonObject processedNode)
     {
         string[] userIdKeys = ["userId", "organizationUserId"];
-        
+
         foreach (string key in userIdKeys)
         {
             if (!processedNode.ContainsKey(key))

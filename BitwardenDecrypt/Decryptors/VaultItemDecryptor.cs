@@ -33,12 +33,7 @@ public class VaultItemDecryptor
 
         (byte[]? ciphertext, string? error) = ParseAndDecodeRsaCipher(cipherString);
 
-        if (error is not null)
-        {
-            return null;
-        }
-
-        return CryptoService.DecryptRsaOaepSha1(_secrets.RsaPrivateKeyDer, ciphertext!);
+        return error is not null ? null : CryptoService.DecryptRsaOaepSha1(_secrets.RsaPrivateKeyDer, ciphertext!);
     }
 
     public JsonNode? DecryptSend(JsonNode sendNode)

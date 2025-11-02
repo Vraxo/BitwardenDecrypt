@@ -85,23 +85,26 @@ public class DecryptionOrchestrator
 
     private static JsonObject StructureOutputJson(JsonObject decryptedData)
     {
-        JsonObject finalOutputObject = [];
+        var finalOutputObject = new JsonObject();
+        var keys = decryptedData.Select(p => p.Key).ToList();
 
-        if (decryptedData.ContainsKey("folders"))
+        // Ensure "folders" is first, if it exists.
+        if (keys.Remove("folders"))
         {
             finalOutputObject["folders"] = decryptedData["folders"]!.DeepClone();
         }
 
-        foreach (KeyValuePair<string, JsonNode?> prop in decryptedData)
+        // Keep a placeholder for "sends" to be added last.
+        bool hasSends = keys.Remove("sends");
+
+        // Add all other items.
+        foreach (var key in keys)
         {
-            if (prop.Key is "folders" or "sends")
-            {
-                continue;
-            }
-            finalOutputObject[prop.Key] = prop.Value!.DeepClone();
+            finalOutputObject[key] = decryptedData[key]!.DeepClone();
         }
 
-        if (decryptedData.ContainsKey("sends"))
+        // Add "sends" at the end, if it exists.
+        if (hasSends)
         {
             finalOutputObject["sends"] = decryptedData["sends"]!.DeepClone();
         }

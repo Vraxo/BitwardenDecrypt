@@ -6,12 +6,7 @@ public static class PathHandler
     {
         try
         {
-            string? exeDir = GetExecutableDirectory();
-            if (exeDir is null)
-            {
-                return;
-            }
-
+            string exeDir = GetExecutableDirectory();
             Console.WriteLine($"Attempting to add '{exeDir}' to the user PATH variable.");
 
             string pathVar = Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.User) ?? "";
@@ -41,12 +36,7 @@ public static class PathHandler
     {
         try
         {
-            string? exeDir = GetExecutableDirectory();
-            if (exeDir is null)
-            {
-                return;
-            }
-
+            string exeDir = GetExecutableDirectory();
             Console.WriteLine($"Attempting to remove '{exeDir}' from the user PATH variable.");
 
             string? pathVar = Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.User);
@@ -78,22 +68,18 @@ public static class PathHandler
         }
     }
 
-    private static string? GetExecutableDirectory()
+    private static string GetExecutableDirectory()
     {
         string? exePath = Environment.ProcessPath;
         if (string.IsNullOrEmpty(exePath))
         {
-            Console.Error.WriteLine("ERROR: Could not determine the application's path.");
-            Environment.ExitCode = 1;
-            return null;
+            throw new InvalidOperationException("Could not determine the application's path.");
         }
 
         string? exeDir = Path.GetDirectoryName(exePath);
         if (string.IsNullOrEmpty(exeDir))
         {
-            Console.Error.WriteLine("ERROR: Could not determine the application's directory.");
-            Environment.ExitCode = 1;
-            return null;
+            throw new InvalidOperationException("Could not determine the application's directory.");
         }
 
         return exeDir;
