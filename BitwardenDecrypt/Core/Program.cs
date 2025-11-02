@@ -1,4 +1,6 @@
 ﻿using System.CommandLine;
+using BitwardenDecryptor.Core.VaultParsing;
+using BitwardenDecryptor.Core.VaultParsing.FormatParsers;
 
 namespace BitwardenDecryptor.Core;
 
@@ -9,10 +11,20 @@ public static class Program
         IProtectedKeyDecryptor protectedKeyDecryptor = new ProtectedKeyDecryptor();
         var fileHandler = new VaultFileHandler();
         var userInteractor = new ConsoleUserInteractor();
-        var orchestrator = new DecryptionOrchestrator(protectedKeyDecryptor, fileHandler, userInteractor);
-        var decryptionHandler = new DecryptionHandler(orchestrator, fileHandler);
+
+        VaultParser vaultParser = new(
+        [
+            new EncryptedJsonParser(),
+            new Format2024Parser(),
+            new NewFormatParser(),
+            new OldFormatParser(),
+        ]);
+
+        DecryptionOrchestrator orchestrator = new(protectedKeyDecryptor, fileHandler, userInteractor, vaultParser);
+        DecryptionHandler decryptionHandler = new(orchestrator, fileHandler);
 
         RootCommand rootCommand = BuildCommandLine(decryptionHandler);
+
         return rootCommand.Invoke(args);
     }
 

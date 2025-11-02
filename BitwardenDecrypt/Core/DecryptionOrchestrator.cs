@@ -1,5 +1,4 @@
 ﻿using BitwardenDecryptor.Core.VaultParsing;
-using BitwardenDecryptor.Core.VaultParsing.FormatParsers;
 using BitwardenDecryptor.Exceptions;
 using BitwardenDecryptor.Models;
 using System.Text.Encodings.Web;
@@ -14,16 +13,19 @@ public class DecryptionOrchestrator
     private readonly VaultFileHandler _fileHandler;
     private readonly ConsoleUserInteractor _userInteractor;
     private readonly IAccountSelector _accountSelector;
+    private readonly VaultParser _vaultParser;
 
     public DecryptionOrchestrator(
         IProtectedKeyDecryptor protectedKeyDecryptor,
         VaultFileHandler fileHandler,
-        ConsoleUserInteractor userInteractor)
+        ConsoleUserInteractor userInteractor,
+        VaultParser vaultParser)
     {
         _protectedKeyDecryptor = protectedKeyDecryptor;
         _fileHandler = fileHandler;
         _userInteractor = userInteractor;
         _accountSelector = userInteractor;
+        _vaultParser = vaultParser;
     }
 
     public void RunDecryption(string inputFile, bool includeSends, string? outputFile)
@@ -53,15 +55,7 @@ public class DecryptionOrchestrator
 
     private VaultMetadata ParseVaultMetadata(JsonNode rootNode, string inputFile)
     {
-        List<IVaultFormatParser> formatParsers =
-        [
-            new EncryptedJsonParser(),
-            new Format2024Parser(),
-            new NewFormatParser(),
-            new OldFormatParser(),
-        ];
-        VaultParser vaultParser = new(formatParsers);
-        return vaultParser.Parse(rootNode, _accountSelector, inputFile)
+        return _vaultParser.Parse(rootNode, _accountSelector, inputFile)
             ?? throw new VaultFormatException("Could not determine the format of the provided JSON file or find any account data within it.");
     }
 

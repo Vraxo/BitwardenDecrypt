@@ -28,15 +28,13 @@ public class VaultItemDecryptor
     {
         if (_secrets.RsaPrivateKeyDer is null)
         {
-            Console.Error.WriteLine("Cannot decrypt RSA cipher string as private key is not available.");
             return null;
         }
 
         (byte[]? ciphertext, string? error) = ParseAndDecodeRsaCipher(cipherString);
-        
+
         if (error is not null)
         {
-            Console.Error.WriteLine($"{error}: {cipherString}");
             return null;
         }
 
@@ -46,7 +44,7 @@ public class VaultItemDecryptor
     public JsonNode? DecryptSend(JsonNode sendNode)
     {
         string? keyCipherString = sendNode["key"]?.GetValue<string>();
-        
+
         if (keyCipherString is null)
         {
             return sendNode;
@@ -105,7 +103,6 @@ public class VaultItemDecryptor
     {
         if (_secrets.GeneratedEncryptionKey.Length == 0 || _secrets.GeneratedMacKey.Length == 0)
         {
-            Console.Error.WriteLine("ERROR: Cannot decrypt Send key as user symmetric keys are not fully available.");
             return null;
         }
 
@@ -113,7 +110,6 @@ public class VaultItemDecryptor
 
         if (sendKeyResult.Error is not null || sendKeyResult.FullKey is null)
         {
-            Console.Error.WriteLine($"Failed to decrypt Send key: {sendKeyResult.Error}");
             return null;
         }
 
@@ -169,15 +165,13 @@ public class VaultItemDecryptor
             return (_secrets.GeneratedEncryptionKey, _secrets.GeneratedMacKey);
         }
 
-        Console.Error.WriteLine($"Warning: User symmetric keys not fully available for item. Defaulting to stretched keys; decryption may fail for some fields.");
-        
         return (_secrets.StretchedEncryptionKey, _secrets.StretchedMacKey);
     }
 
     private static void RemoveUserSpecificFields(JsonObject processedNode)
     {
         string[] userIdKeys = ["userId", "organizationUserId"];
-        
+
         foreach (string key in userIdKeys)
         {
             if (!processedNode.ContainsKey(key))

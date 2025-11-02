@@ -24,9 +24,6 @@
 ### `BitwardenDecrypt\Core\CommandHandlers.cs`
 
 ```csharp
-using BitwardenDecryptor.Exceptions;
-using System.Text.Json;
-
 namespace BitwardenDecryptor.Core;
 
 public class DecryptionHandler
@@ -54,106 +51,32 @@ public class DecryptionHandler
         }
     }
 }
+```
 
-public static class PathHandler
+---
+
+### `BitwardenDecrypt\Core\CommandLineOptions.cs`
+
+```csharp
+namespace BitwardenDecryptor;
+
+public class CommandLineOptions
 {
-    public static void HandleInstallPath()
-    {
-        try
-        {
-            string? exeDir = GetExecutableDirectory();
-            if (exeDir is null)
-            {
-                return;
-            }
-
-            Console.WriteLine($"Attempting to add '{exeDir}' to the user PATH variable.");
-
-            string pathVar = Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.User) ?? "";
-            List<string> paths = pathVar.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries).ToList();
-
-            if (paths.Any(p => p.Equals(exeDir, StringComparison.OrdinalIgnoreCase)))
-            {
-                Console.WriteLine("Application directory is already in the user PATH. No changes made.");
-                return;
-            }
-
-            paths.Add(exeDir);
-            string newPath = string.Join(Path.PathSeparator, paths);
-            Environment.SetEnvironmentVariable("PATH", newPath, EnvironmentVariableTarget.User);
-
-            Console.WriteLine("\nSuccessfully added application directory to the user PATH.");
-            Console.WriteLine("You may need to restart your terminal/shell or log out and back in for the changes to take effect.");
-        }
-        catch (Exception ex)
-        {
-            ConsoleExceptionHandler.Handle(ex);
-            Environment.ExitCode = 1;
-        }
-    }
-
-    public static void HandleUninstallPath()
-    {
-        try
-        {
-            string? exeDir = GetExecutableDirectory();
-            if (exeDir is null)
-            {
-                return;
-            }
-
-            Console.WriteLine($"Attempting to remove '{exeDir}' from the user PATH variable.");
-
-            string? pathVar = Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.User);
-            if (string.IsNullOrEmpty(pathVar))
-            {
-                Console.WriteLine("User PATH is empty or not set. No changes needed.");
-                return;
-            }
-
-            List<string> paths = pathVar.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries).ToList();
-            int removedCount = paths.RemoveAll(p => p.Equals(exeDir, StringComparison.OrdinalIgnoreCase));
-
-            if (removedCount > 0)
-            {
-                string newPath = string.Join(Path.PathSeparator, paths);
-                Environment.SetEnvironmentVariable("PATH", newPath, EnvironmentVariableTarget.User);
-                Console.WriteLine("\nSuccessfully removed application directory from the user PATH.");
-                Console.WriteLine("You may need to restart your terminal/shell or log out and back in for the changes to take effect.");
-            }
-            else
-            {
-                Console.WriteLine("Application directory was not found in the user PATH. No changes made.");
-            }
-        }
-        catch (Exception ex)
-        {
-            ConsoleExceptionHandler.Handle(ex);
-            Environment.ExitCode = 1;
-        }
-    }
-
-    private static string? GetExecutableDirectory()
-    {
-        string? exePath = Environment.ProcessPath;
-        if (string.IsNullOrEmpty(exePath))
-        {
-            Console.Error.WriteLine("ERROR: Could not determine the application's path.");
-            Environment.ExitCode = 1;
-            return null;
-        }
-
-        string? exeDir = Path.GetDirectoryName(exePath);
-        if (string.IsNullOrEmpty(exeDir))
-        {
-            Console.Error.WriteLine("ERROR: Could not determine the application's directory.");
-            Environment.ExitCode = 1;
-            return null;
-        }
-
-        return exeDir;
-    }
+    public string InputFile { get; set; } = "data.json";
+    public bool IncludeSends { get; set; } = false;
+    public string? OutputFile { get; set; }
 }
+```
+
+---
+
+### `BitwardenDecrypt\Core\ConsoleExceptionHandler.cs`
+
+```csharp
+using BitwardenDecryptor.Exceptions;
+using System.Text.Json;
+
+namespace BitwardenDecryptor.Core;
 
 public static class ConsoleExceptionHandler
 {
@@ -185,21 +108,6 @@ public static class ConsoleExceptionHandler
                 break;
         }
     }
-}
-```
-
----
-
-### `BitwardenDecrypt\Core\CommandLineOptions.cs`
-
-```csharp
-namespace BitwardenDecryptor;
-
-public class CommandLineOptions
-{
-    public string InputFile { get; set; } = "data.json";
-    public bool IncludeSends { get; set; } = false;
-    public string? OutputFile { get; set; }
 }
 ```
 
@@ -406,6 +314,114 @@ public class DecryptionOrchestrator
         }
 
         return finalOutputObject;
+    }
+}
+```
+
+---
+
+### `BitwardenDecrypt\Core\PathHandler.cs`
+
+```csharp
+namespace BitwardenDecryptor.Core;
+
+public static class PathHandler
+{
+    public static void HandleInstallPath()
+    {
+        try
+        {
+            string? exeDir = GetExecutableDirectory();
+            if (exeDir is null)
+            {
+                return;
+            }
+
+            Console.WriteLine($"Attempting to add '{exeDir}' to the user PATH variable.");
+
+            string pathVar = Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.User) ?? "";
+            List<string> paths = pathVar.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries).ToList();
+
+            if (paths.Any(p => p.Equals(exeDir, StringComparison.OrdinalIgnoreCase)))
+            {
+                Console.WriteLine("Application directory is already in the user PATH. No changes made.");
+                return;
+            }
+
+            paths.Add(exeDir);
+            string newPath = string.Join(Path.PathSeparator, paths);
+            Environment.SetEnvironmentVariable("PATH", newPath, EnvironmentVariableTarget.User);
+
+            Console.WriteLine("\nSuccessfully added application directory to the user PATH.");
+            Console.WriteLine("You may need to restart your terminal/shell or log out and back in for the changes to take effect.");
+        }
+        catch (Exception ex)
+        {
+            ConsoleExceptionHandler.Handle(ex);
+            Environment.ExitCode = 1;
+        }
+    }
+
+    public static void HandleUninstallPath()
+    {
+        try
+        {
+            string? exeDir = GetExecutableDirectory();
+            if (exeDir is null)
+            {
+                return;
+            }
+
+            Console.WriteLine($"Attempting to remove '{exeDir}' from the user PATH variable.");
+
+            string? pathVar = Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.User);
+            if (string.IsNullOrEmpty(pathVar))
+            {
+                Console.WriteLine("User PATH is empty or not set. No changes needed.");
+                return;
+            }
+
+            List<string> paths = pathVar.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries).ToList();
+            int removedCount = paths.RemoveAll(p => p.Equals(exeDir, StringComparison.OrdinalIgnoreCase));
+
+            if (removedCount > 0)
+            {
+                string newPath = string.Join(Path.PathSeparator, paths);
+                Environment.SetEnvironmentVariable("PATH", newPath, EnvironmentVariableTarget.User);
+                Console.WriteLine("\nSuccessfully removed application directory from the user PATH.");
+                Console.WriteLine("You may need to restart your terminal/shell or log out and back in for the changes to take effect.");
+            }
+            else
+            {
+                Console.WriteLine("Application directory was not found in the user PATH. No changes made.");
+            }
+        }
+        catch (Exception ex)
+        {
+            ConsoleExceptionHandler.Handle(ex);
+            Environment.ExitCode = 1;
+        }
+    }
+
+    private static string? GetExecutableDirectory()
+    {
+        string? exePath = Environment.ProcessPath;
+        if (string.IsNullOrEmpty(exePath))
+        {
+            Console.Error.WriteLine("ERROR: Could not determine the application's path.");
+            Environment.ExitCode = 1;
+            return null;
+        }
+
+        string? exeDir = Path.GetDirectoryName(exePath);
+        if (string.IsNullOrEmpty(exeDir))
+        {
+            Console.Error.WriteLine("ERROR: Could not determine the application's directory.");
+            Environment.ExitCode = 1;
+            return null;
+        }
+
+        return exeDir;
     }
 }
 ```
