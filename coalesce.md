@@ -260,25 +260,27 @@ public class DecryptionOrchestrator
         var finalOutputObject = new JsonObject();
         var keys = decryptedData.Select(p => p.Key).ToList();
 
-        // Ensure "folders" is first, if it exists.
-        if (keys.Remove("folders"))
+        var orderedKeys = new List<string>();
+
+        // 1. Add "folders" if it exists
+        if (keys.Contains("folders"))
         {
-            finalOutputObject["folders"] = decryptedData["folders"]!.DeepClone();
+            orderedKeys.Add("folders");
         }
 
-        // Keep a placeholder for "sends" to be added last.
-        bool hasSends = keys.Remove("sends");
+        // 2. Add all other keys that aren't "folders" or "sends"
+        orderedKeys.AddRange(keys.Where(k => k != "folders" && k != "sends"));
 
-        // Add all other items.
-        foreach (var key in keys)
+        // 3. Add "sends" if it exists
+        if (keys.Contains("sends"))
+        {
+            orderedKeys.Add("sends");
+        }
+
+        // 4. Build the new object from the ordered keys
+        foreach (var key in orderedKeys)
         {
             finalOutputObject[key] = decryptedData[key]!.DeepClone();
-        }
-
-        // Add "sends" at the end, if it exists.
-        if (hasSends)
-        {
-            finalOutputObject["sends"] = decryptedData["sends"]!.DeepClone();
         }
 
         return finalOutputObject;
@@ -1686,7 +1688,8 @@ public class Format2024DecryptorStrategy(
     {
         JsonObject decryptedEntries = [];
 
-        DecryptAndStoreOrganizationKeys();
+        var orgKeysNode = rootNode[$"user_{context.AccountUuid}_crypto_organizationKeys"]?.AsObject();
+        vaultItemDecryptor.DecryptAndStoreOrganizationKeys(orgKeysNode);
 
         string[] groupsToProcess = ["folder_folders", "ciphers_ciphers", "collection_collections", "organizations_organizations"];
 
@@ -1726,29 +1729,6 @@ public class Format2024DecryptorStrategy(
         }
 
         return decryptedEntries;
-    }
-
-    private void DecryptAndStoreOrganizationKeys()
-    {
-        if (rootNode[$"user_{context.AccountUuid}_crypto_organizationKeys"] is not JsonObject orgKeysNode || secrets.RsaPrivateKeyDer is null)
-        {
-            return;
-        }
-
-        foreach (KeyValuePair<string, JsonNode?> kvp in orgKeysNode)
-        {
-            string? orgKeyCipher = kvp.Value?["key"]?.GetValue<string>() ?? kvp.Value?.GetValue<string>();
-            if (orgKeyCipher == null)
-            {
-                continue;
-            }
-
-            byte[]? decryptedOrgKey = vaultItemDecryptor.DecryptRsaInternal(orgKeyCipher);
-            if (decryptedOrgKey != null)
-            {
-                secrets.OrganizationKeys[kvp.Key] = decryptedOrgKey;
-            }
-        }
     }
 
     private void ProcessSends(JsonObject decryptedEntries)

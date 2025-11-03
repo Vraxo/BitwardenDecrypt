@@ -21,7 +21,7 @@ public class ProtectedKeyDecryptor : IProtectedKeyDecryptor
 
         DecryptionResult decryptionResult = CryptoService.VerifyAndDecryptAesCbc(masterKey, masterMacKey, cipherString);
 
-        return decryptionResult.Error != null || decryptionResult.Plaintext == null
+        return decryptionResult.Error is not null || decryptionResult.Plaintext is null
             ? new(null, null, null, decryptionResult.Error)
             : ProcessDecryptedKey(decryptionResult.Plaintext, encryptionType, isExportValidationKey);
     }
@@ -71,6 +71,6 @@ public class ProtectedKeyDecryptor : IProtectedKeyDecryptor
     {
         DecryptionResult result = CryptoService.VerifyAndDecryptAesCbc(encryptionKey, macKey, cipherString);
 
-        return result.Error != null ? null : result.Plaintext;
+        return result.Error is not null ? null : result.Plaintext;
     }
 }

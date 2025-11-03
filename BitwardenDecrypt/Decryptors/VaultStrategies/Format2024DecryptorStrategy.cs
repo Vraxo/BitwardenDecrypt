@@ -21,7 +21,7 @@ public class Format2024DecryptorStrategy(
         foreach (string groupKey in groupsToProcess)
         {
             JsonObject? groupDataNode = rootNode[$"user_{context.AccountUuid}_{groupKey}"]?.AsObject();
-            if (groupDataNode == null)
+            if (groupDataNode is null)
             {
                 continue;
             }

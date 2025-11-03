@@ -114,7 +114,7 @@ public class KeyDerivationService
 
     private void HandleSymmetricKeyDecryptionResult(string? error, byte[]? symKey)
     {
-        if (error == null && symKey != null)
+        if (error is null && symKey is not null)
         {
             return;
         }
@@ -122,14 +122,14 @@ public class KeyDerivationService
         string errorMessageToDisplay = error ?? "Symmetric key is null after decryption without explicit error.";
         string message = $"Failed to decrypt/validate Protected Symmetric Key or Export Validation Key. {errorMessageToDisplay}";
 
-        if (error != null &&
+        if (error is not null &&
             (error.Contains("MAC mismatch", StringComparison.OrdinalIgnoreCase) ||
              error.Contains("padding", StringComparison.OrdinalIgnoreCase) ||
              error.Contains("Likely wrong password", StringComparison.OrdinalIgnoreCase)))
         {
             message += "\nThis often indicates a wrong password (either Master Password for data.json or Export Password for encrypted exports).";
         }
-        else if (symKey == null && error == null)
+        else if (symKey is null && error is null)
         {
             message += "\nThis might indicate an unexpected issue with the decrypted data structure or a problem not caught by specific error checks.";
         }

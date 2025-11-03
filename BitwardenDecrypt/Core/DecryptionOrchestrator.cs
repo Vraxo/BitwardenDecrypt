@@ -1,9 +1,6 @@
 ﻿using BitwardenDecryptor.Core.VaultParsing;
-using BitwardenDecryptor.Core.VaultParsing.FormatParsers;
 using BitwardenDecryptor.Exceptions;
 using BitwardenDecryptor.Models;
-using System.CommandLine;
-using System.Runtime.Intrinsics.X86;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -49,7 +46,7 @@ public class DecryptionOrchestrator
     {
         _userInteractor.PrintOutputHeader(outputFile);
 
-        JsonNode rootNode = _fileHandler.ReadAndParseVaultFile(inputFile);
+        JsonNode rootNode = VaultFileHandler.ReadAndParseVaultFile(inputFile);
         VaultMetadata metadata = ParseVaultMetadata(rootNode, inputFile);
 
         string effectivePassword = string.IsNullOrEmpty(password)
@@ -62,9 +59,9 @@ public class DecryptionOrchestrator
         JsonObject decryptedData = DecryptVaultData(rootNode, secrets, metadata, includeSends);
         string decryptedJson = SerializeDecryptedData(decryptedData);
 
-        if (outputFile != null)
+        if (outputFile is not null)
         {
-            _fileHandler.WriteOutputToFile(decryptedJson, outputFile);
+            VaultFileHandler.WriteOutputToFile(decryptedJson, outputFile);
             _userInteractor.NotifySuccess(outputFile);
         }
         else

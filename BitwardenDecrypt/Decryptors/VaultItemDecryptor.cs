@@ -184,7 +184,7 @@ public class VaultItemDecryptor
 
     private (byte[] encKey, byte[] macKey) GetBaseKeysForItem(string? orgId)
     {
-        if (orgId != null && _secrets.OrganizationKeys.TryGetValue(orgId, out byte[]? orgFullKey) && orgFullKey?.Length >= 64)
+        if (orgId is not null && _secrets.OrganizationKeys.TryGetValue(orgId, out byte[]? orgFullKey) && orgFullKey?.Length >= 64)
         {
             return (orgFullKey.Take(32).ToArray(), orgFullKey.Skip(32).Take(32).ToArray());
         }

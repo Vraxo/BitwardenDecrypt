@@ -29,7 +29,7 @@ public class GenericJsonDecryptor
         }
 
         DecryptionResult decryptionResult = CryptoService.VerifyAndDecryptAesCbc(encryptionKey, macKey, cipherString);
-        return decryptionResult.Error != null || decryptionResult.Plaintext == null
+        return decryptionResult.Error is not null || decryptionResult.Plaintext is null
             ? $"ERROR: {decryptionResult.Error}. CipherString not decrypted: {cipherString}"
             : ProcessDecryptedPlaintext(decryptionResult.Plaintext, cipherString);
     }

@@ -42,7 +42,7 @@ public class NewFormatParser : IVaultFormatParser
     private static List<AccountInfo> ExtractAccounts(JsonNode rootNode)
     {
         return rootNode.AsObject()
-            .Where(kvp => Guid.TryParse(kvp.Key, out _) && kvp.Value?["profile"]?["email"] != null)
+            .Where(kvp => Guid.TryParse(kvp.Key, out _) && kvp.Value?["profile"]?["email"] is not null)
             .Select(kvp => new AccountInfo(kvp.Key, kvp.Value!["profile"]!["email"]!.GetValue<string>()))
             .ToList();
     }

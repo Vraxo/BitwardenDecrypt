@@ -43,7 +43,7 @@ public class Format2024Parser : IVaultFormatParser
     private static List<AccountInfo> ExtractAccounts(JsonObject accountsNode)
     {
         return [.. accountsNode
-            .Where(kvp => Guid.TryParse(kvp.Key, out _) && kvp.Value != null && kvp.Value.AsObject().Count != 0)
+            .Where(kvp => Guid.TryParse(kvp.Key, out _) && kvp.Value is not null && kvp.Value.AsObject().Count != 0)
             .Select(kvp => new AccountInfo(kvp.Key, kvp.Value!["email"]!.GetValue<string>()))];
     }
 

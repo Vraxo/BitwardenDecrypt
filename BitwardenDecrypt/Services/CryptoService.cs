@@ -125,7 +125,7 @@ public static class CryptoService
         {
             using RSA rsa = RSA.Create();
 
-            if (rsa == null)
+            if (rsa is null)
             {
                 return null;
             }
