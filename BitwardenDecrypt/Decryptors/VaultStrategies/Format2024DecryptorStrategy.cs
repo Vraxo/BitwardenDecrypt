@@ -3,12 +3,22 @@ using System.Text.Json.Nodes;
 
 namespace BitwardenDecryptor.Core.VaultStrategies;
 
-public class Format2024DecryptorStrategy(
-    JsonNode rootNode,
-    BitwardenSecrets secrets,
-    DecryptionContext context,
-    VaultItemDecryptor vaultItemDecryptor) : IVaultDecryptorStrategy
+public class Format2024DecryptorStrategy : IVaultDecryptorStrategy
 {
+    private readonly JsonNode rootNode;
+    private readonly DecryptionContext context;
+    private readonly VaultItemDecryptor vaultItemDecryptor;
+
+    public Format2024DecryptorStrategy(
+        JsonNode rootNode,
+        DecryptionContext context,
+        VaultItemDecryptor vaultItemDecryptor)
+    {
+        this.rootNode = rootNode;
+        this.context = context;
+        this.vaultItemDecryptor = vaultItemDecryptor;
+    }
+
     public JsonObject Decrypt()
     {
         JsonObject decryptedEntries = [];

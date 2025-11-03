@@ -12,7 +12,6 @@ public class LegacyJsonDecryptorStrategy : IVaultDecryptorStrategy
 
     public LegacyJsonDecryptorStrategy(
         JsonNode rootNode,
-        BitwardenSecrets secrets,
         DecryptionContext context,
         VaultItemDecryptor vaultItemDecryptor)
     {

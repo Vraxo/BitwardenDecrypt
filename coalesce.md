@@ -162,19 +162,16 @@ namespace BitwardenDecryptor.Core;
 public class DecryptionOrchestrator
 {
     private readonly IProtectedKeyDecryptor _protectedKeyDecryptor;
-    private readonly VaultFileHandler _fileHandler;
     private readonly ConsoleUserInteractor _userInteractor;
     private readonly IAccountSelector _accountSelector;
     private readonly VaultParser _vaultParser;
 
     public DecryptionOrchestrator(
         IProtectedKeyDecryptor protectedKeyDecryptor,
-        VaultFileHandler fileHandler,
         ConsoleUserInteractor userInteractor,
         VaultParser vaultParser)
     {
         _protectedKeyDecryptor = protectedKeyDecryptor;
-        _fileHandler = fileHandler;
         _userInteractor = userInteractor;
         _accountSelector = userInteractor;
         _vaultParser = vaultParser;
@@ -184,7 +181,7 @@ public class DecryptionOrchestrator
     {
         try
         {
-            string? finalOutputFile = _fileHandler.DetermineOutputFile(inputFile, outputFile, save);
+            string? finalOutputFile = VaultFileHandler.DetermineOutputFile(inputFile, outputFile, save);
             RunDecryption(inputFile, includeSends, finalOutputFile, password);
         }
         catch (Exception ex)
@@ -387,6 +384,8 @@ public static class PathHandler
 using BitwardenDecryptor.Core.VaultParsing;
 using BitwardenDecryptor.Core.VaultParsing.FormatParsers;
 using System.CommandLine;
+using System.Text;
+using System.Text.Json.Nodes;
 
 namespace BitwardenDecryptor.Core;
 
@@ -395,7 +394,6 @@ public static class Program
     public static int Main(string[] args)
     {
         IProtectedKeyDecryptor protectedKeyDecryptor = new ProtectedKeyDecryptor();
-        VaultFileHandler fileHandler = new();
         ConsoleUserInteractor userInteractor = new();
 
         VaultParser vaultParser = new(
@@ -406,7 +404,7 @@ public static class Program
             new OldFormatParser(),
         ]);
 
-        DecryptionOrchestrator orchestrator = new(protectedKeyDecryptor, fileHandler, userInteractor, vaultParser);
+        DecryptionOrchestrator orchestrator = new(protectedKeyDecryptor, userInteractor, vaultParser);
 
         RootCommand rootCommand = BuildCommandLine(orchestrator);
 
@@ -472,7 +470,7 @@ using System.Text.Json.Nodes;
 
 namespace BitwardenDecryptor.Core;
 
-public class VaultFileHandler
+public static class VaultFileHandler
 {
     public static JsonNode ReadAndParseVaultFile(string inputFile)
     {
@@ -485,7 +483,7 @@ public class VaultFileHandler
         File.WriteAllText(outputFile, decryptedJson, Encoding.UTF8);
     }
 
-    public string? DetermineOutputFile(string inputFile, string? outputFile, bool save)
+    public static string? DetermineOutputFile(string inputFile, string? outputFile, bool save)
     {
         if (outputFile is not null)
         {

@@ -30,8 +30,8 @@ public class VaultDataDecryptor
         return _context.FileFormat switch
         {
             "EncryptedJSON" => new EncryptedJsonDecryptorStrategy(rootNode, _secrets, vaultItemDecryptor),
-            "2024" => new Format2024DecryptorStrategy(rootNode, _secrets, _context, vaultItemDecryptor),
-            "NEW" or "OLD" => new LegacyJsonDecryptorStrategy(rootNode, _secrets, _context, vaultItemDecryptor),
+            "2024" => new Format2024DecryptorStrategy(rootNode, _context, vaultItemDecryptor),
+            "NEW" or "OLD" => new LegacyJsonDecryptorStrategy(rootNode, _context, vaultItemDecryptor),
             _ => throw new NotSupportedException($"The file format '{_context.FileFormat}' is not supported.")
         };
     }
