@@ -13,7 +13,8 @@ public class Format2024DecryptorStrategy(
     {
         JsonObject decryptedEntries = [];
 
-        DecryptAndStoreOrganizationKeys();
+        var orgKeysNode = rootNode[$"user_{context.AccountUuid}_crypto_organizationKeys"]?.AsObject();
+        vaultItemDecryptor.DecryptAndStoreOrganizationKeys(orgKeysNode);
 
         string[] groupsToProcess = ["folder_folders", "ciphers_ciphers", "collection_collections", "organizations_organizations"];
 
@@ -53,29 +54,6 @@ public class Format2024DecryptorStrategy(
         }
 
         return decryptedEntries;
-    }
-
-    private void DecryptAndStoreOrganizationKeys()
-    {
-        if (rootNode[$"user_{context.AccountUuid}_crypto_organizationKeys"] is not JsonObject orgKeysNode || secrets.RsaPrivateKeyDer is null)
-        {
-            return;
-        }
-
-        foreach (KeyValuePair<string, JsonNode?> kvp in orgKeysNode)
-        {
-            string? orgKeyCipher = kvp.Value?["key"]?.GetValue<string>() ?? kvp.Value?.GetValue<string>();
-            if (orgKeyCipher == null)
-            {
-                continue;
-            }
-
-            byte[]? decryptedOrgKey = vaultItemDecryptor.DecryptRsaInternal(orgKeyCipher);
-            if (decryptedOrgKey != null)
-            {
-                secrets.OrganizationKeys[kvp.Key] = decryptedOrgKey;
-            }
-        }
     }
 
     private void ProcessSends(JsonObject decryptedEntries)
