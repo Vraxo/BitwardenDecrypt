@@ -21,40 +21,6 @@
 
 ---
 
-### `BitwardenDecrypt\Core\CommandHandlers.cs`
-
-```csharp
-namespace BitwardenDecryptor.Core;
-
-public class DecryptionHandler
-{
-    private readonly DecryptionOrchestrator _orchestrator;
-    private readonly VaultFileHandler _fileHandler;
-
-    public DecryptionHandler(DecryptionOrchestrator orchestrator, VaultFileHandler fileHandler)
-    {
-        _orchestrator = orchestrator;
-        _fileHandler = fileHandler;
-    }
-
-    public void Execute(string inputFile, bool includeSends, string? outputFile, bool save, string? password)
-    {
-        try
-        {
-            string? finalOutputFile = _fileHandler.DetermineOutputFile(inputFile, outputFile, save);
-            _orchestrator.RunDecryption(inputFile, includeSends, finalOutputFile, password);
-        }
-        catch (Exception ex)
-        {
-            ConsoleExceptionHandler.Handle(ex, inputFile);
-            Environment.ExitCode = 1;
-        }
-    }
-}
-```
-
----
-
 ### `BitwardenDecrypt\Core\ConsoleExceptionHandler.cs`
 
 ```csharp
@@ -189,6 +155,7 @@ using BitwardenDecryptor.Core.VaultParsing.FormatParsers;
 using BitwardenDecryptor.Exceptions;
 using BitwardenDecryptor.Models;
 using System.CommandLine;
+using System.Runtime.Intrinsics.X86;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -216,7 +183,21 @@ public class DecryptionOrchestrator
         _vaultParser = vaultParser;
     }
 
-    public void RunDecryption(string inputFile, bool includeSends, string? outputFile, string? password)
+    public void HandleDecryptionCommand(string inputFile, bool includeSends, string? outputFile, bool save, string? password)
+    {
+        try
+        {
+            string? finalOutputFile = _fileHandler.DetermineOutputFile(inputFile, outputFile, save);
+            RunDecryption(inputFile, includeSends, finalOutputFile, password);
+        }
+        catch (Exception ex)
+        {
+            ConsoleExceptionHandler.Handle(ex, inputFile);
+            Environment.ExitCode = 1;
+        }
+    }
+
+    private void RunDecryption(string inputFile, bool includeSends, string? outputFile, string? password)
     {
         _userInteractor.PrintOutputHeader(outputFile);
 
@@ -427,14 +408,13 @@ public static class Program
         ]);
 
         DecryptionOrchestrator orchestrator = new(protectedKeyDecryptor, fileHandler, userInteractor, vaultParser);
-        DecryptionHandler decryptionHandler = new(orchestrator, fileHandler);
 
-        RootCommand rootCommand = BuildCommandLine(decryptionHandler);
+        RootCommand rootCommand = BuildCommandLine(orchestrator);
 
         return rootCommand.Invoke(args);
     }
 
-    private static RootCommand BuildCommandLine(DecryptionHandler decryptionHandler)
+    private static RootCommand BuildCommandLine(DecryptionOrchestrator orchestrator)
     {
         RootCommand rootCommand = new("Decrypts an encrypted Bitwarden data.json file.");
 
@@ -467,7 +447,7 @@ public static class Program
         rootCommand.AddOption(saveOption);
         rootCommand.AddOption(passwordOption);
 
-        rootCommand.SetHandler(decryptionHandler.Execute,
+        rootCommand.SetHandler(orchestrator.HandleDecryptionCommand,
             inputFileArgument, includeSendsOption, outputFileOption, saveOption, passwordOption);
 
         Command installPathCommand = new("install-path", "Adds the application's directory to the PATH environment variable for the current user.");

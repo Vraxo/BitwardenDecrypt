@@ -21,14 +21,13 @@ public static class Program
         ]);
 
         DecryptionOrchestrator orchestrator = new(protectedKeyDecryptor, fileHandler, userInteractor, vaultParser);
-        DecryptionHandler decryptionHandler = new(orchestrator, fileHandler);
 
-        RootCommand rootCommand = BuildCommandLine(decryptionHandler);
+        RootCommand rootCommand = BuildCommandLine(orchestrator);
 
         return rootCommand.Invoke(args);
     }
 
-    private static RootCommand BuildCommandLine(DecryptionHandler decryptionHandler)
+    private static RootCommand BuildCommandLine(DecryptionOrchestrator orchestrator)
     {
         RootCommand rootCommand = new("Decrypts an encrypted Bitwarden data.json file.");
 
@@ -61,7 +60,7 @@ public static class Program
         rootCommand.AddOption(saveOption);
         rootCommand.AddOption(passwordOption);
 
-        rootCommand.SetHandler(decryptionHandler.Execute,
+        rootCommand.SetHandler(orchestrator.HandleDecryptionCommand,
             inputFileArgument, includeSendsOption, outputFileOption, saveOption, passwordOption);
 
         Command installPathCommand = new("install-path", "Adds the application's directory to the PATH environment variable for the current user.");

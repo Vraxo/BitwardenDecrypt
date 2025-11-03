@@ -3,6 +3,7 @@ using BitwardenDecryptor.Core.VaultParsing.FormatParsers;
 using BitwardenDecryptor.Exceptions;
 using BitwardenDecryptor.Models;
 using System.CommandLine;
+using System.Runtime.Intrinsics.X86;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -30,7 +31,21 @@ public class DecryptionOrchestrator
         _vaultParser = vaultParser;
     }
 
-    public void RunDecryption(string inputFile, bool includeSends, string? outputFile, string? password)
+    public void HandleDecryptionCommand(string inputFile, bool includeSends, string? outputFile, bool save, string? password)
+    {
+        try
+        {
+            string? finalOutputFile = _fileHandler.DetermineOutputFile(inputFile, outputFile, save);
+            RunDecryption(inputFile, includeSends, finalOutputFile, password);
+        }
+        catch (Exception ex)
+        {
+            ConsoleExceptionHandler.Handle(ex, inputFile);
+            Environment.ExitCode = 1;
+        }
+    }
+
+    private void RunDecryption(string inputFile, bool includeSends, string? outputFile, string? password)
     {
         _userInteractor.PrintOutputHeader(outputFile);
 
