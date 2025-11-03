@@ -10,19 +10,16 @@ namespace BitwardenDecryptor.Core;
 public class DecryptionOrchestrator
 {
     private readonly IProtectedKeyDecryptor _protectedKeyDecryptor;
-    private readonly VaultFileHandler _fileHandler;
     private readonly ConsoleUserInteractor _userInteractor;
     private readonly IAccountSelector _accountSelector;
     private readonly VaultParser _vaultParser;
 
     public DecryptionOrchestrator(
         IProtectedKeyDecryptor protectedKeyDecryptor,
-        VaultFileHandler fileHandler,
         ConsoleUserInteractor userInteractor,
         VaultParser vaultParser)
     {
         _protectedKeyDecryptor = protectedKeyDecryptor;
-        _fileHandler = fileHandler;
         _userInteractor = userInteractor;
         _accountSelector = userInteractor;
         _vaultParser = vaultParser;
@@ -32,7 +29,7 @@ public class DecryptionOrchestrator
     {
         try
         {
-            string? finalOutputFile = _fileHandler.DetermineOutputFile(inputFile, outputFile, save);
+            string? finalOutputFile = VaultFileHandler.DetermineOutputFile(inputFile, outputFile, save);
             RunDecryption(inputFile, includeSends, finalOutputFile, password);
         }
         catch (Exception ex)

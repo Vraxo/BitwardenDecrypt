@@ -1,6 +1,8 @@
 ﻿using BitwardenDecryptor.Core.VaultParsing;
 using BitwardenDecryptor.Core.VaultParsing.FormatParsers;
 using System.CommandLine;
+using System.Text;
+using System.Text.Json.Nodes;
 
 namespace BitwardenDecryptor.Core;
 
@@ -9,7 +11,6 @@ public static class Program
     public static int Main(string[] args)
     {
         IProtectedKeyDecryptor protectedKeyDecryptor = new ProtectedKeyDecryptor();
-        VaultFileHandler fileHandler = new();
         ConsoleUserInteractor userInteractor = new();
 
         VaultParser vaultParser = new(
@@ -20,7 +21,7 @@ public static class Program
             new OldFormatParser(),
         ]);
 
-        DecryptionOrchestrator orchestrator = new(protectedKeyDecryptor, fileHandler, userInteractor, vaultParser);
+        DecryptionOrchestrator orchestrator = new(protectedKeyDecryptor, userInteractor, vaultParser);
 
         RootCommand rootCommand = BuildCommandLine(orchestrator);
 

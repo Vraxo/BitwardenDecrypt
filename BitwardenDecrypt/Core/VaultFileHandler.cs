@@ -3,7 +3,7 @@ using System.Text.Json.Nodes;
 
 namespace BitwardenDecryptor.Core;
 
-public class VaultFileHandler
+public static class VaultFileHandler
 {
     public static JsonNode ReadAndParseVaultFile(string inputFile)
     {
@@ -16,7 +16,7 @@ public class VaultFileHandler
         File.WriteAllText(outputFile, decryptedJson, Encoding.UTF8);
     }
 
-    public string? DetermineOutputFile(string inputFile, string? outputFile, bool save)
+    public static string? DetermineOutputFile(string inputFile, string? outputFile, bool save)
     {
         if (outputFile is not null)
         {

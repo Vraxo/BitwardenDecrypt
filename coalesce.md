@@ -151,11 +151,8 @@ public class ConsoleUserInteractor : IAccountSelector
 
 ```csharp
 using BitwardenDecryptor.Core.VaultParsing;
-using BitwardenDecryptor.Core.VaultParsing.FormatParsers;
 using BitwardenDecryptor.Exceptions;
 using BitwardenDecryptor.Models;
-using System.CommandLine;
-using System.Runtime.Intrinsics.X86;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -201,7 +198,7 @@ public class DecryptionOrchestrator
     {
         _userInteractor.PrintOutputHeader(outputFile);
 
-        JsonNode rootNode = _fileHandler.ReadAndParseVaultFile(inputFile);
+        JsonNode rootNode = VaultFileHandler.ReadAndParseVaultFile(inputFile);
         VaultMetadata metadata = ParseVaultMetadata(rootNode, inputFile);
 
         string effectivePassword = string.IsNullOrEmpty(password)
@@ -214,9 +211,9 @@ public class DecryptionOrchestrator
         JsonObject decryptedData = DecryptVaultData(rootNode, secrets, metadata, includeSends);
         string decryptedJson = SerializeDecryptedData(decryptedData);
 
-        if (outputFile != null)
+        if (outputFile is not null)
         {
-            _fileHandler.WriteOutputToFile(decryptedJson, outputFile);
+            VaultFileHandler.WriteOutputToFile(decryptedJson, outputFile);
             _userInteractor.NotifySuccess(outputFile);
         }
         else
@@ -477,35 +474,34 @@ namespace BitwardenDecryptor.Core;
 
 public class VaultFileHandler
 {
-    public JsonNode ReadAndParseVaultFile(string inputFile)
+    public static JsonNode ReadAndParseVaultFile(string inputFile)
     {
         string jsonData = File.ReadAllText(inputFile);
         return JsonNode.Parse(jsonData)!;
     }
 
-    public void WriteOutputToFile(string decryptedJson, string outputFile)
+    public static void WriteOutputToFile(string decryptedJson, string outputFile)
     {
         File.WriteAllText(outputFile, decryptedJson, Encoding.UTF8);
     }
 
     public string? DetermineOutputFile(string inputFile, string? outputFile, bool save)
     {
-        if (outputFile != null)
+        if (outputFile is not null)
         {
             return outputFile;
         }
 
-        if (save)
+        if (!save)
         {
-            string? directory = Path.GetDirectoryName(inputFile);
-            string filenameWithoutExt = Path.GetFileNameWithoutExtension(inputFile);
-            string newFilename = $"{filenameWithoutExt}.decrypted.json";
-            return string.IsNullOrEmpty(directory)
-                ? newFilename
-                : Path.Combine(directory, newFilename);
+            return null;
         }
 
-        return null;
+        string? directory = Path.GetDirectoryName(inputFile);
+        string filenameWithoutExt = Path.GetFileNameWithoutExtension(inputFile);
+        string newFilename = $"{filenameWithoutExt}.decrypted.json";
+
+        return Path.Combine(directory ?? "", newFilename);
     }
 }
 ```
@@ -566,7 +562,7 @@ public class GenericJsonDecryptor
         }
 
         DecryptionResult decryptionResult = CryptoService.VerifyAndDecryptAesCbc(encryptionKey, macKey, cipherString);
-        return decryptionResult.Error != null || decryptionResult.Plaintext == null
+        return decryptionResult.Error is not null || decryptionResult.Plaintext is null
             ? $"ERROR: {decryptionResult.Error}. CipherString not decrypted: {cipherString}"
             : ProcessDecryptedPlaintext(decryptionResult.Plaintext, cipherString);
     }
@@ -681,7 +677,7 @@ public class ProtectedKeyDecryptor : IProtectedKeyDecryptor
 
         DecryptionResult decryptionResult = CryptoService.VerifyAndDecryptAesCbc(masterKey, masterMacKey, cipherString);
 
-        return decryptionResult.Error != null || decryptionResult.Plaintext == null
+        return decryptionResult.Error is not null || decryptionResult.Plaintext is null
             ? new(null, null, null, decryptionResult.Error)
             : ProcessDecryptedKey(decryptionResult.Plaintext, encryptionType, isExportValidationKey);
     }
@@ -731,7 +727,7 @@ public class ProtectedKeyDecryptor : IProtectedKeyDecryptor
     {
         DecryptionResult result = CryptoService.VerifyAndDecryptAesCbc(encryptionKey, macKey, cipherString);
 
-        return result.Error != null ? null : result.Plaintext;
+        return result.Error is not null ? null : result.Plaintext;
     }
 }
 ```
@@ -972,7 +968,7 @@ public class VaultItemDecryptor
 
     private (byte[] encKey, byte[] macKey) GetBaseKeysForItem(string? orgId)
     {
-        if (orgId != null && _secrets.OrganizationKeys.TryGetValue(orgId, out byte[]? orgFullKey) && orgFullKey?.Length >= 64)
+        if (orgId is not null && _secrets.OrganizationKeys.TryGetValue(orgId, out byte[]? orgFullKey) && orgFullKey?.Length >= 64)
         {
             return (orgFullKey.Take(32).ToArray(), orgFullKey.Skip(32).Take(32).ToArray());
         }
@@ -1280,7 +1276,7 @@ public static class CryptoService
         {
             using RSA rsa = RSA.Create();
 
-            if (rsa == null)
+            if (rsa is null)
             {
                 return null;
             }
@@ -1437,7 +1433,7 @@ public class KeyDerivationService
 
     private void HandleSymmetricKeyDecryptionResult(string? error, byte[]? symKey)
     {
-        if (error == null && symKey != null)
+        if (error is null && symKey is not null)
         {
             return;
         }
@@ -1445,14 +1441,14 @@ public class KeyDerivationService
         string errorMessageToDisplay = error ?? "Symmetric key is null after decryption without explicit error.";
         string message = $"Failed to decrypt/validate Protected Symmetric Key or Export Validation Key. {errorMessageToDisplay}";
 
-        if (error != null &&
+        if (error is not null &&
             (error.Contains("MAC mismatch", StringComparison.OrdinalIgnoreCase) ||
              error.Contains("padding", StringComparison.OrdinalIgnoreCase) ||
              error.Contains("Likely wrong password", StringComparison.OrdinalIgnoreCase)))
         {
             message += "\nThis often indicates a wrong password (either Master Password for data.json or Export Password for encrypted exports).";
         }
-        else if (symKey == null && error == null)
+        else if (symKey is null && error is null)
         {
             message += "\nThis might indicate an unexpected issue with the decrypted data structure or a problem not caught by specific error checks.";
         }
@@ -1516,11 +1512,11 @@ public static class ConsolePasswordReader
 
             if (keyInfo.Key == ConsoleKey.Backspace && password.Length > 0)
             {
-                _ = password.Remove(password.Length - 1, 1);
+                password.Remove(password.Length - 1, 1);
             }
             else if (!char.IsControl(keyInfo.KeyChar))
             {
-                _ = password.Append(keyInfo.KeyChar);
+                password.Append(keyInfo.KeyChar);
             }
         }
 
@@ -1696,7 +1692,7 @@ public class Format2024DecryptorStrategy(
         foreach (string groupKey in groupsToProcess)
         {
             JsonObject? groupDataNode = rootNode[$"user_{context.AccountUuid}_{groupKey}"]?.AsObject();
-            if (groupDataNode == null)
+            if (groupDataNode is null)
             {
                 continue;
             }
@@ -1947,7 +1943,7 @@ public class Format2024Parser : IVaultFormatParser
     private static List<AccountInfo> ExtractAccounts(JsonObject accountsNode)
     {
         return [.. accountsNode
-            .Where(kvp => Guid.TryParse(kvp.Key, out _) && kvp.Value != null && kvp.Value.AsObject().Count != 0)
+            .Where(kvp => Guid.TryParse(kvp.Key, out _) && kvp.Value is not null && kvp.Value.AsObject().Count != 0)
             .Select(kvp => new AccountInfo(kvp.Key, kvp.Value!["email"]!.GetValue<string>()))];
     }
 
@@ -2023,7 +2019,7 @@ public class NewFormatParser : IVaultFormatParser
     private static List<AccountInfo> ExtractAccounts(JsonNode rootNode)
     {
         return rootNode.AsObject()
-            .Where(kvp => Guid.TryParse(kvp.Key, out _) && kvp.Value?["profile"]?["email"] != null)
+            .Where(kvp => Guid.TryParse(kvp.Key, out _) && kvp.Value?["profile"]?["email"] is not null)
             .Select(kvp => new AccountInfo(kvp.Key, kvp.Value!["profile"]!["email"]!.GetValue<string>()))
             .ToList();
     }
