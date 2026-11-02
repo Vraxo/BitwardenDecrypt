@@ -43,14 +43,16 @@ jobs:
         shell: bash
         run: |
           status=0
-          dotnet test BitwardenDecrypt.Tests/BitwardenDecrypt.Tests.csproj --configuration Release --no-restore --nologo --verbosity normal > test.log 2>&1 || status=$?
+          dotnet test BitwardenDecrypt.Tests/BitwardenDecrypt.Tests.csproj --configuration Release --no-restore --nologo --verbosity minimal > test.log 2>&1 || status=$?
           cat test.log
           if [ "$status" -ne 0 ]; then
             python3 - <<'PY'
           from pathlib import Path
-          message = Path("test.log").read_text()
-          message = message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
-          print(f"::error::{message}")
+          message = Path("test.log").read_text()[-6000:]
+          for start in range(0, len(message), 1500):
+              chunk = message[start:start + 1500]
+              chunk = chunk.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+              print(f"::error::{chunk}")
           PY
             exit "$status"
           fi
