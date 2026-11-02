@@ -37,7 +37,20 @@ jobs:
           cache-dependency-path: '**/*.csproj'
 
       - name: Restore
-        run: dotnet restore BitwardenDecrypt.sln --verbosity minimal
+        shell: bash
+        run: |
+          status=0
+          dotnet restore BitwardenDecrypt.sln --verbosity normal > restore.log 2>&1 || status=$?
+          cat restore.log
+          if [ "$status" -ne 0 ]; then
+            python3 - <<'PY'
+          from pathlib import Path
+          message = Path("restore.log").read_text()
+          message = message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+          print(f"::error::{message}")
+          PY
+            exit "$status"
+          fi
 
       - name: Build and test
         run: dotnet test BitwardenDecrypt.sln --configuration Release --no-restore --nologo --verbosity minimal
