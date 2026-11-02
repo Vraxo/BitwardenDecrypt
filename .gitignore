@@ -1,6 +1,14 @@
 # .NET build output
 artifacts/
 
+# Visual Studio
+.vs/
+
+# Local vault data
+data.json
+decrypted.json
+*.decrypted.json
+
 # Coalesce local files
 coalesce-run.bat
 coalesce.md
