@@ -64,14 +64,6 @@ public static class Program
         rootCommand.SetHandler(orchestrator.HandleDecryptionCommand,
             inputFileArgument, includeSendsOption, outputFileOption, saveOption, passwordOption);
 
-        Command installPathCommand = new("install-path", "Adds the application's directory to the PATH environment variable for the current user.");
-        installPathCommand.SetHandler(PathHandler.HandleInstallPath);
-        rootCommand.AddCommand(installPathCommand);
-
-        Command uninstallPathCommand = new("uninstall-path", "Removes the application's directory from the PATH environment variable for the current user.");
-        uninstallPathCommand.SetHandler(PathHandler.HandleUninstallPath);
-        rootCommand.AddCommand(uninstallPathCommand);
-
         return rootCommand;
     }
 }

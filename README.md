@@ -52,15 +52,6 @@ dotnet run --project BitwardenDecrypt/BitwardenDecrypt.csproj -- path/to/data.js
 | `--includesends` | Include Sends in the output. |
 | `-p`, `--password <password>` | Supply the master password or export password. If omitted, a hidden prompt is shown. |
 
-On Windows, the built executable also provides `install-path` and `uninstall-path` subcommands to add or remove its directory from the current user's `PATH`. Run them from the directory containing the executable:
-
-```powershell
-.\BitwardenDecrypt.exe install-path
-.\BitwardenDecrypt.exe uninstall-path
-```
-
-Restart the terminal after changing `PATH`.
-
 ## ⚠️ Security
 
 Decrypted output contains plaintext secrets. Protect output files and delete them when they are no longer needed.
