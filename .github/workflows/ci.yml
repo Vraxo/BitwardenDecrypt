@@ -40,7 +40,16 @@ jobs:
         shell: bash
         run: |
           status=0
-          dotnet restore BitwardenDecrypt.sln --verbosity normal > restore.log 2>&1 || status=$?
+          (
+            pwd
+            ls -la
+            find . -maxdepth 2 -type f -print | sort
+            if [ ! -f BitwardenDecrypt.sln ]; then
+              echo "Solution file not found"
+              exit 1
+            fi
+            dotnet restore BitwardenDecrypt.sln --verbosity normal
+          ) > restore.log 2>&1 || status=$?
           cat restore.log
           if [ "$status" -ne 0 ]; then
             python3 - <<'PY'
