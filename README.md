@@ -2,6 +2,10 @@
 
 A .NET 8 command-line tool for decrypting Bitwarden `data.json` files and password-protected encrypted JSON exports. Decryption runs locally, and the result can be printed as JSON or saved to a file.
 
+## 🙏 Acknowledgements
+
+This project is a .NET rewrite of [GurpreetKang/BitwardenDecrypt](https://github.com/GurpreetKang/BitwardenDecrypt).
+
 ## 📄 Supported input
 
 - Bitwarden desktop `data.json` files using the 2024 or older supported layouts.
