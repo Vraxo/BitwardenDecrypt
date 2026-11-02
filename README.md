@@ -1,6 +1,6 @@
 # 🔐 BitwardenDecrypt
 
-A .NET 8 command-line tool for decrypting Bitwarden `data.json` files and password-protected encrypted JSON exports. Decryption runs locally, and the result can be printed as JSON or saved to a file.
+A .NET 10 command-line tool for decrypting Bitwarden `data.json` files and password-protected encrypted JSON exports. Decryption runs locally, and the result can be printed as JSON or saved to a file.
 
 ## 🙏 Acknowledgements
 
@@ -17,7 +17,7 @@ If a local file contains multiple accounts, the tool prompts you to select one. 
 
 ## 🛠️ Build
 
-Install the [.NET 8 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/8.0), then run from the repository root:
+Install the [.NET 10 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/10.0), then run from the repository root:
 
 ```bash
 dotnet build BitwardenDecrypt.sln
