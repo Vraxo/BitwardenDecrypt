@@ -37,7 +37,7 @@ jobs:
           cache-dependency-path: '**/*.csproj'
 
       - name: Restore
-        run: dotnet restore BitwardenDecrypt.sln --nologo --verbosity minimal
+        run: dotnet restore BitwardenDecrypt.sln --verbosity minimal
 
       - name: Build and test
         run: dotnet test BitwardenDecrypt.sln --configuration Release --no-restore --nologo --verbosity minimal
