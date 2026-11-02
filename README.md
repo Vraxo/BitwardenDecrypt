@@ -23,6 +23,14 @@ Install the [.NET 8 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/8.0)
 dotnet build BitwardenDecrypt.sln
 ```
 
+## 🧪 Tests
+
+The test suite uses synthetic vault data and does not require real credentials.
+
+```bash
+dotnet test BitwardenDecrypt.sln
+```
+
 ## 🚀 Usage
 
 Run from the repository root:
