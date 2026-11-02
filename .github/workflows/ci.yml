@@ -37,29 +37,7 @@ jobs:
           cache-dependency-path: '**/*.csproj'
 
       - name: Restore
-        shell: bash
-        run: |
-          status=0
-          (
-            pwd
-            ls -la
-            find . -maxdepth 2 -type f -print | sort
-            if [ ! -f BitwardenDecrypt.sln ]; then
-              echo "Solution file not found"
-              exit 1
-            fi
-            dotnet restore BitwardenDecrypt.sln --verbosity normal
-          ) > restore.log 2>&1 || status=$?
-          cat restore.log
-          if [ "$status" -ne 0 ]; then
-            python3 - <<'PY'
-          from pathlib import Path
-          message = Path("restore.log").read_text()
-          message = message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
-          print(f"::error::{message}")
-          PY
-            exit "$status"
-          fi
+        run: dotnet restore BitwardenDecrypt.Tests/BitwardenDecrypt.Tests.csproj --verbosity minimal
 
       - name: Build and test
-        run: dotnet test BitwardenDecrypt.sln --configuration Release --no-restore --nologo --verbosity minimal
+        run: dotnet test BitwardenDecrypt.Tests/BitwardenDecrypt.Tests.csproj --configuration Release --no-restore --nologo --verbosity minimal
