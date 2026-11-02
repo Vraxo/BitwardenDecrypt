@@ -30,7 +30,7 @@ public static class CryptoService
 
         using Argon2 argon2 = new(config);
         using SecureArray<byte> hashResult = argon2.Hash();
-        return hashResult.Buffer;
+        return hashResult.Buffer[..outputLength];
     }
 
     public static byte[] HkdfExpandSha256(byte[] ikm, byte[] info, int outputLength)
